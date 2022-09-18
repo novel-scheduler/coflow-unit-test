@@ -11,7 +11,7 @@ void expect_tests()
   // assign functions to function pointers
   eo->toContain = toContain;
   eo->printDataTypeString = printDataTypeString;
-  eo->toBeOfDateType = toBeOfDateType;
+  eo->toBeOfDataType = toBeOfDataType;
   eo->toHaveLengthOf = toHaveLengthOf;
 
   // Some configurations
@@ -28,7 +28,7 @@ void expect_tests()
 
   // Tests
   expect((void *)flow)->toContain(0);
-  expect((void *)flow)->toBeOfDateType(FlowList);
+  expect((void *)flow)->toBeOfDataType(FlowList);
   expect((void *)flow)->toHaveLengthOf(3);
 
   // Free alocated objects

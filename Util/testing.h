@@ -23,7 +23,7 @@ typedef struct expectObj
   DATATYPE dataObjType;
   void (*printDataTypeString)();
   void (*toContain)(int num);
-  void (*toBeOfDateType)(DATATYPE type);
+  void (*toBeOfDataType)(DATATYPE type);
   void (*toHaveLengthOf)(int num);
 } expectObj;
 
@@ -90,9 +90,9 @@ void printDataTypeString()
   printf("%s\n", (char *)getDataTypeString(eo->dataObjType));
 }
 
-void toBeOfDateType(DATATYPE type)
+void toBeOfDataType(DATATYPE type)
 {
-  logFunctionCall("toBeOfDateType");
+  logFunctionCall("toBeOfDataType");
   assert(eo->dataObjType == type);
 }
 
