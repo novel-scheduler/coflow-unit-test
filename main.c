@@ -1,26 +1,38 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include "./Test/TestUtilities.h"
+// #include "./Test/TestUtilities.h"
 #include "Util/testing.h"
 
-void util_test()
+void expect_tests()
 {
   // initialize expect object
-  expectObj *eo = malloc(sizeof(struct expectObj));
+  eo = malloc(sizeof(struct expectObj));
 
   // assign functions to function pointers
   eo->toContain = toContain;
-  eo->printDataTypeName = printDataTypeName;
+  eo->printDataTypeString = printDataTypeString;
+  eo->toBeOfDateType = toBeOfDateType;
+  eo->toHaveLengthOf = toHaveLengthOf;
 
-  dummy *d = malloc(sizeof(struct dummy));
+  struct fq_flow *flow = malloc(sizeof(struct fq_flow));
+  flow->socket_hash = 123;
+  flow->next = malloc(sizeof(struct fq_flow));
+  flow->next->socket_hash = 456;
+  flow->next->next = malloc(sizeof(struct fq_flow));
+  flow->next->next->socket_hash = 789;
+  eo->dataObj = (void *)flow;
 
-  printf("FLAG 1\n");
-  expect(eo, (void *)d)->toContain(eo, 0);
-  printf("FLAG 2\n");
-  eo->dataObjType = LinkedList;
-  printf("FLAG 3\n");
+  eo->dataObjType = FlowList;
 
-  eo->printDataTypeName(eo);
+  expect((void *)flow)->toContain(0);
+
+  expect((void *)flow)->toBeOfDateType(FlowList);
+
+  expect((void *)flow)->toHaveLengthOf(3);
+
+  // Free alocated objects
+  free(eo);
+  freeFlowList(flow);
 }
 
 void Test_Test()
@@ -31,7 +43,7 @@ int main()
 {
   printf("---------- <Unit Testing Session> ----------\n\n");
 
-  util_test();
+  expect_tests();
 
   printf("\n---------- <END Of Session> ----------\n");
   return 0;
