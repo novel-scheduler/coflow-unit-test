@@ -14,6 +14,7 @@ void expect_tests()
   eo->toBeOfDateType = toBeOfDateType;
   eo->toHaveLengthOf = toHaveLengthOf;
 
+  // Some configurations
   struct fq_flow *flow = malloc(sizeof(struct fq_flow));
   flow->socket_hash = 123;
   flow->next = malloc(sizeof(struct fq_flow));
@@ -22,12 +23,12 @@ void expect_tests()
   flow->next->next->socket_hash = 789;
   eo->dataObj = (void *)flow;
 
+  // Set data type
   eo->dataObjType = FlowList;
 
+  // Tests
   expect((void *)flow)->toContain(0);
-
   expect((void *)flow)->toBeOfDateType(FlowList);
-
   expect((void *)flow)->toHaveLengthOf(3);
 
   // Free alocated objects
@@ -41,10 +42,10 @@ void Test_Test()
 
 int main()
 {
-  printf("---------- <Unit Testing Session> ----------\n\n");
+  printf("------------- <Unit Testing Session> -------------\n\n");
 
   expect_tests();
 
-  printf("\n---------- <END Of Session> ----------\n");
+  printf("\n------------- <END Of Session> -------------\n");
   return 0;
 }
