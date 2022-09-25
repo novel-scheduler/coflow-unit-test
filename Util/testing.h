@@ -41,6 +41,7 @@ typedef struct expectObj
   void (*toContainSocketHashOf)(int expectedSocketHash);
   void (*toHaveLengthOf)(int expectedLength);
   void (*toEqualFlowListOf)(struct fq_flow *expectedListHeadectedLength);
+  void (*toEqualNumberValueOf)(int number);
 } expectObj;
 
 // Global configurations
@@ -345,6 +346,23 @@ void toEqualFlowListOf(struct fq_flow *expectedListHead)
     ptr1 = ptr1->next;
     ptr2 = ptr2->next;
   }
+
+  printSingleTestPassText(currentTestNumber);
+}
+
+void toEqualNumberValueOf(int number)
+{
+  int testFailed = 0;
+
+  currentTestNumber++;
+  printSingleTestStartText("toEqualFlowListOf", currentTestNumber, totalTestsNumber);
+
+  printf("Data Object Number Value: %d\n", (int)eo->dataObj);
+  printf("Expected Number Value: %d\n", number);
+
+  testFailed = ((int)eo->dataObj) != number;
+  if (checkForTestFail(testFailed, currentTestNumber))
+    return;
 
   printSingleTestPassText(currentTestNumber);
 }

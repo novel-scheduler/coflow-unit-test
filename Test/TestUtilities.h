@@ -186,9 +186,9 @@ int Promotecoflows(struct fq_flow_head *oldFlow, struct fq_flow_head *newFlow,
                    struct fq_flow_head *coflowhead, struct fq_flow *flow,
                    struct fq_flow *coflow, unsigned arr[], int lengthOfarray)
 {
-  printf("In Promotecoflows \n");
+  // printk("In Promotecoflows \n");
 
-  printf("size of array %d\n", lengthOfarray);
+  // printk("size of array %d\n", lengthOfarray);
 
   struct fq_flow_head *head;
 
@@ -214,17 +214,15 @@ loop:
     {
 
     loop3:
-      printf("promotion completed \n");
+      // printk("promotion completed \n");
       return 1;
     }
   }
 
   /*if(newFlow->first->socket_hash)
   printk("value of newflows head is %u\n", newFlow->first->socket_hash);
-
   if(oldFlow->first->socket_hash)
   printk("value of oldflows head is  %u\n", oldFlow->first->socket_hash);
-
   printk("value of flag is  %d\n", flag);*/
 
   if (!flag)
