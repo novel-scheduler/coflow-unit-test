@@ -1,9 +1,24 @@
+/**
+WIP: This is the main file that I am working on
+*/
+
 #include <assert.h>
+#include <stdlib.h>
 #include "../Test/TestUtilities.h"
 
 // Used for enabling logs
-#define DEBUG 1
+#define DEBUG 0
 char log[100] = {'\0'};
+
+// Colors
+#define KNRM "\x1B[0m"
+#define KRED "\x1B[31m"
+#define KGRN "\x1B[32m"
+#define KYEL "\x1B[33m"
+#define KBLU "\x1B[34m"
+#define KMAG "\x1B[35m"
+#define KCYN "\x1B[36m"
+#define KWHT "\x1B[37m"
 
 typedef struct dummy
 {
@@ -27,8 +42,10 @@ typedef struct expectObj
   void (*toHaveLengthOf)(int num);
 } expectObj;
 
-// initialize global expect object
-expectObj *eo;
+// Global configurations
+expectObj *eo; // initialize global expect object
+int totalTestsNumber = 0;
+int currentTestNumber = 0;
 
 /**
  * Prints the function name if DEBUG is true (1).
@@ -46,6 +63,80 @@ void logMessage()
   if (DEBUG)
   {
     printf("%s", log);
+  }
+}
+
+void red()
+{
+  printf("%s", KRED);
+}
+
+void green()
+{
+  printf("%s", KGRN);
+}
+
+void blue()
+{
+  printf("%s", KBLU);
+}
+
+void cyan()
+{
+  printf("%s", KCYN);
+}
+
+void magenta()
+{
+  printf("%s", KMAG);
+}
+
+void reset()
+{
+  printf("\033[0m");
+}
+
+void printTestingSessionStartText()
+{
+  magenta();
+  printf("\n*------------- <Unit Testing Session> -------------*\n\n");
+  reset();
+}
+
+void printTestingSessionEndText()
+{
+  magenta();
+  printf("\n*------------- <END Of Session> -------------*\n\n");
+  reset();
+}
+
+void printSingleTestStartText(char *testName, int curTestNum, int totTestsNum)
+{
+  blue();
+  printf("<--- Test %d out of %d: [%s] --->\n", curTestNum, totTestsNum, testName);
+  reset();
+}
+
+void printSingleTestPassText(int curTestNum)
+{
+  green();
+  printf("<--- Passed Test %d --->\n\n", currentTestNumber);
+  reset();
+}
+
+void printSingleTestFailText(int curTestNum)
+{
+  red();
+  printf("<--- Failed Test %d --->\n\n", currentTestNumber);
+  reset();
+}
+
+void checkForTestFail(int testHasFailed, int curTestNum)
+{
+  if (testHasFailed)
+  {
+    printSingleTestFailText(curTestNum);
+    abort();
   }
 }
 
@@ -93,19 +184,37 @@ void printDataTypeString()
 void toBeOfDataType(DATATYPE type)
 {
   logFunctionCall("toBeOfDataType");
+
+  currentTestNumber++;
+  printSingleTestStartText("toBeOfDataType", currentTestNumber, totalTestsNumber);
+
+  printf("eo->dataObjType: %d\n", eo->dataObjType);
+  printf("Expected Type: %d\n", type);
   assert(eo->dataObjType == type);
+
+  printSingleTestPassText(currentTestNumber);
 }
 
 // TODO:
 void toHaveAtIndex(expectObj *eo)
 {
   logFunctionCall("toHaveAtIndex");
+
+  currentTestNumber++;
+  printSingleTestStartText("toHaveAtIndex", currentTestNumber, totalTestsNumber);
+
+  printSingleTestPassText(currentTestNumber);
 }
 
 // TODO:
 void toContain(int num)
 {
   logFunctionCall("toContain");
+
+  currentTestNumber++;
+  printSingleTestStartText("toContain", currentTestNumber, totalTestsNumber);
+
+  printSingleTestPassText(currentTestNumber);
 }
 
 /**
@@ -115,9 +224,10 @@ void toContain(int num)
 void toHaveLengthOf(int num)
 {
   logFunctionCall("toHaveLengthOf");
+  int testFailed = 0;
 
-  // Assert that the type is FlowList (LL) // TODO:
-  assert(eo->dataObjType == FlowList);
+  currentTestNumber++;
+  printSingleTestStartText("toHaveLengthOf", currentTestNumber, totalTestsNumber);
 
   // Get length of FlowList
   struct fq_flow *ptr = (struct fq_flow *)eo->dataObj;
@@ -125,15 +235,16 @@ void toHaveLengthOf(int num)
   while (ptr != NULL)
   {
     listLength++;
-    sprintf(log, "socket_hash: %d\n", ptr->socket_hash);
-    logMessage();
     ptr = ptr->next;
   }
-  sprintf(log, "LENGTH: %d", listLength);
-  logMessage();
+  printf("List Length: %d\n", listLength);
+  printf("Expected Length: %d\n", num);
 
-  // Assert that the FlowList is of the given length
-  assert(listLength == num);
+  // Check that the FlowList is of the given length
+  testFailed = listLength != num;
+  checkForTestFail(testFailed, currentTestNumber);
+
+  printSingleTestPassText(currentTestNumber);
 }
 
 /**
@@ -148,5 +259,20 @@ void freeFlowList(struct fq_flow *listHead)
     tmp = ptr;
     ptr = ptr->next;
     free(tmp);
+  }
+}
+
+/**
+ * Iterates and prints entire linked list
+ */
+void printEntireLinkedList(struct fq_flow *listHead)
+{
+  struct fq_flow *ptr = listHead;
+  int index = 0;
+  while (ptr != NULL)
+  {
+    printf("Element [%d] of Linked List:\n", index++);
+    printf("    socket_hash -> %u\n", (unsigned int)ptr->socket_hash); // TODO: test
+    ptr = ptr->next;
   }
 }
