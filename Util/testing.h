@@ -36,16 +36,20 @@ typedef struct expectObj
 {
   void *dataObj;
   DATATYPE dataObjType;
-  void (*printDataTypeString)();
-  void (*toContain)(int num);
-  void (*toBeOfDataType)(DATATYPE type);
-  void (*toHaveLengthOf)(int num);
+  void (*toBeDataTypeOf)(DATATYPE expectedType);
+  void (*toHaveSocketHashAtIndexOf)(int expectedSocketHash, int expectedIndex);
+  void (*toContainSocketHashOf)(int expectedSocketHash);
+  void (*toHaveLengthOf)(int expectedLength);
+  void (*toEqualFlowListOf)(struct fq_flow *expectedListHeadectedLength);
 } expectObj;
 
 // Global configurations
 expectObj *eo; // initialize global expect object
 int totalTestsNumber = 0;
 int currentTestNumber = 0;
+int failedTestsCount = 0;
+
+// *** LOG FUNCTIONS ***
 
 /**
  * Prints the function name if DEBUG is true (1).
@@ -65,6 +69,8 @@ void logMessage()
     printf("%s", log);
   }
 }
+
+// *** COLOR FUNCTIONS ***
 
 void red()
 {
@@ -96,58 +102,69 @@ void reset()
   printf("\033[0m");
 }
 
+// *** TEST PROGRESS PRINT FUNCTIONS ***
+
 void printTestingSessionStartText()
 {
   magenta();
-  printf("\n*------------- <Unit Testing Session> -------------*\n\n");
+  printf("\n*------------- <UNIT TESTING SESSION> -------------*\n\n");
   reset();
 }
 
 void printTestingSessionEndText()
 {
   magenta();
-  printf("\n*------------- <END Of Session> -------------*\n\n");
+  printf("\n*------------- <END OF SESSION> -------------*\n\n");
   reset();
 }
 
 void printSingleTestStartText(char *testName, int curTestNum, int totTestsNum)
 {
   blue();
-  printf("<--- Test %d out of %d: [%s] --->\n", curTestNum, totTestsNum, testName);
+  printf("<----- Test %d out of %d: [%s] ----->\n", curTestNum, totTestsNum, testName);
   reset();
 }
 
 void printSingleTestPassText(int curTestNum)
 {
   green();
-  printf("<--- Passed Test %d --->\n\n", currentTestNumber);
+  printf("<----- Passed Test %d ----->\n\n", currentTestNumber);
   reset();
 }
 
 void printSingleTestFailText(int curTestNum)
 {
   red();
-  printf("<--- Failed Test %d --->\n\n", currentTestNumber);
+  printf("<----- Failed Test %d ----->\n\n", currentTestNumber);
   reset();
 }
 
-void checkForTestFail(int testHasFailed, int curTestNum)
+int checkForTestFail(int testHasFailed, int curTestNum)
 {
   if (testHasFailed)
   {
     printSingleTestFailText(curTestNum);
-    abort();
+    failedTestsCount++;
+    return 1;
   }
+
+  return 0;
 }
 
-/**
- * Expect function that works like Jest.
- */
-expectObj *expect(void *obj)
+void printTestingSessionResult()
 {
-  eo->dataObj = obj;
-  return eo;
+  cyan();
+  printf("\n***** Test Result: ");
+  green();
+  printf("%d passed", (totalTestsNumber - failedTestsCount));
+  printf(", ");
+  red();
+  printf("%d failed ", failedTestsCount);
+  cyan();
+  printf("*****\n");
 }
+
+// *** TEST HELPER FUNCTIONS ***
 
 /**
  * Gets the string value of the given type.
@@ -177,74 +194,7 @@ char *getDataTypeString(DATATYPE type)
  */
 void printDataTypeString()
 {
-  logFunctionCall("printDataTypeString");
   printf("%s\n", (char *)getDataTypeString(eo->dataObjType));
-}
-
-void toBeOfDataType(DATATYPE type)
-{
-  logFunctionCall("toBeOfDataType");
-
-  currentTestNumber++;
-  printSingleTestStartText("toBeOfDataType", currentTestNumber, totalTestsNumber);
-
-  printf("eo->dataObjType: %d\n", eo->dataObjType);
-  printf("Expected Type: %d\n", type);
-  assert(eo->dataObjType == type);
-
-  printSingleTestPassText(currentTestNumber);
-}
-
-// TODO:
-void toHaveAtIndex(expectObj *eo)
-{
-  logFunctionCall("toHaveAtIndex");
-
-  currentTestNumber++;
-  printSingleTestStartText("toHaveAtIndex", currentTestNumber, totalTestsNumber);
-
-  printSingleTestPassText(currentTestNumber);
-}
-
-// TODO:
-void toContain(int num)
-{
-  logFunctionCall("toContain");
-
-  currentTestNumber++;
-  printSingleTestStartText("toContain", currentTestNumber, totalTestsNumber);
-
-  printSingleTestPassText(currentTestNumber);
-}
-
-/**
- * Tests whether the data type is a list, and then tests
- * whether the list has the same length as the given number.
- */
-void toHaveLengthOf(int num)
-{
-  logFunctionCall("toHaveLengthOf");
-  int testFailed = 0;
-
-  currentTestNumber++;
-  printSingleTestStartText("toHaveLengthOf", currentTestNumber, totalTestsNumber);
-
-  // Get length of FlowList
-  struct fq_flow *ptr = (struct fq_flow *)eo->dataObj;
-  int listLength = 0;
-  while (ptr != NULL)
-  {
-    listLength++;
-    ptr = ptr->next;
-  }
-  printf("List Length: %d\n", listLength);
-  printf("Expected Length: %d\n", num);
-
-  // Check that the FlowList is of the given length
-  testFailed = listLength != num;
-  checkForTestFail(testFailed, currentTestNumber);
-
-  printSingleTestPassText(currentTestNumber);
 }
 
 /**
@@ -275,4 +225,126 @@ void printEntireLinkedList(struct fq_flow *listHead)
     printf("    socket_hash -> %u\n", (unsigned int)ptr->socket_hash); // TODO: test
     ptr = ptr->next;
   }
+}
+
+int getFlowListLength(struct fq_flow *listHead)
+{
+  struct fq_flow *ptr = listHead;
+
+  int listLength = 0;
+  while (ptr != NULL)
+  {
+    listLength++;
+    ptr = ptr->next;
+  }
+
+  return listLength;
+}
+
+// *** EXPECT TEST FUNCTIONS ***
+
+/**
+ * Expect function. This is the building block for calling the toBe... functions.
+ */
+expectObj *expect(void *obj)
+{
+  eo->dataObj = obj;
+  return eo;
+}
+
+void toBeDataTypeOf(DATATYPE expectedType)
+{
+  int testFailed = 0;
+
+  currentTestNumber++;
+  printSingleTestStartText("toBeDataTypeOf", currentTestNumber, totalTestsNumber);
+
+  printf("eo->dataObjType: %d\n", eo->dataObjType);
+  printf("Expected Type: %d\n", expectedType);
+  testFailed = eo->dataObjType != expectedType;
+  if (checkForTestFail(testFailed, currentTestNumber))
+    return;
+
+  printSingleTestPassText(currentTestNumber);
+}
+
+// TODO:
+void toHaveSocketHashAtIndexOf(int expectedSocketHash, int expectedIndex)
+{
+  int testFailed = 0;
+
+  currentTestNumber++;
+  printSingleTestStartText("toHaveSocketHashAtIndexOf", currentTestNumber, totalTestsNumber);
+
+  printSingleTestPassText(currentTestNumber);
+}
+
+// TODO:
+void toContainSocketHashOf(int expectedSocketHash)
+{
+  int testFailed = 0;
+
+  currentTestNumber++;
+  printSingleTestStartText("toContainSocketHashOf", currentTestNumber, totalTestsNumber);
+
+  printSingleTestPassText(currentTestNumber);
+}
+
+/**
+ * Tests whether the list has the same length as the given number.
+ */
+void toHaveLengthOf(int expectedLength)
+{
+  int testFailed = 0;
+
+  currentTestNumber++;
+  printSingleTestStartText("toHaveLengthOf", currentTestNumber, totalTestsNumber);
+
+  // Get length of FlowList
+  struct fq_flow *ptr = (struct fq_flow *)eo->dataObj;
+  int listLength = getFlowListLength(ptr);
+  printf("List Length: %d\n", listLength);
+  printf("Expected Length: %d\n", expectedLength);
+
+  // Check that the FlowList is of the given length
+  testFailed = listLength != expectedLength;
+  if (checkForTestFail(testFailed, currentTestNumber))
+    return;
+
+  printSingleTestPassText(currentTestNumber);
+}
+
+/**
+ * Socket hash is used to check the equality of two flow lists
+ */
+void toEqualFlowListOf(struct fq_flow *expectedListHead)
+{
+  int testFailed = 0;
+
+  currentTestNumber++;
+  printSingleTestStartText("toEqualFlowListOf", currentTestNumber, totalTestsNumber);
+
+  // Get flow list from stored data object
+  struct fq_flow *ptr1 = (struct fq_flow *)eo->dataObj;
+
+  // get expected flow list
+  struct fq_flow *ptr2 = expectedListHead;
+
+  // Check for length equality
+  testFailed = getFlowListLength(ptr1) != getFlowListLength(ptr2);
+  if (checkForTestFail(testFailed, currentTestNumber))
+    return;
+
+  // Check for element equality
+  while (ptr1 != NULL && ptr2 != NULL)
+  {
+    testFailed = ptr1->socket_hash != ptr2->socket_hash;
+    if (checkForTestFail(testFailed, currentTestNumber))
+      return;
+
+    ptr1 = ptr1->next;
+    ptr2 = ptr2->next;
+  }
+
+  printSingleTestPassText(currentTestNumber);
 }

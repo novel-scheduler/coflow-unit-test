@@ -5,26 +5,29 @@
 
 void before()
 {
-  // set up eo with malloc and attach function pointers
+  // initialize expect object
+  eo = malloc(sizeof(struct expectObj));
+
+  // assign functions to function pointers
+  eo->toBeDataTypeOf = toBeDataTypeOf;
+  eo->toHaveSocketHashAtIndexOf = toHaveSocketHashAtIndexOf;
+  eo->toContainSocketHashOf = toContainSocketHashOf;
+  eo->toHaveLengthOf = toHaveLengthOf;
+  eo->toEqualFlowListOf = toEqualFlowListOf;
 }
 
 void after()
 {
   // free eo memory
+  free(eo);
 }
 
-void expect_tests()
+/**
+ * Sample test suite.
+ */
+void Test_Sample()
 {
-  // initialize expect object
-  eo = malloc(sizeof(struct expectObj));
-
-  // assign functions to function pointers
-  eo->toContain = toContain;
-  eo->printDataTypeString = printDataTypeString;
-  eo->toBeOfDataType = toBeOfDataType;
-  eo->toHaveLengthOf = toHaveLengthOf;
-
-  // Some configurations
+  // Some dummy data configurations
   struct fq_flow *flow = malloc(sizeof(struct fq_flow));
   flow->socket_hash = 123;
   flow->next = malloc(sizeof(struct fq_flow));
@@ -32,36 +35,94 @@ void expect_tests()
   flow->next->next = malloc(sizeof(struct fq_flow));
   flow->next->next->socket_hash = 789;
   eo->dataObj = (void *)flow;
-
-  // Set data type
   eo->dataObjType = FlowList;
 
   // Set tests number
-  totalTestsNumber = 3;
-  
+  totalTestsNumber = 5;
+
   // Tests
-  expect((void *)flow)->toContain(0);
-  expect((void *)flow)->toBeOfDataType(FlowList);
+  expect((void *)flow)->toBeDataTypeOf(FlowList);
+  expect((void *)flow)->toHaveSocketHashAtIndexOf(123, 1);
+  expect((void *)flow)->toContainSocketHashOf(123);
   expect((void *)flow)->toHaveLengthOf(3);
+  expect((void *)flow)->toEqualFlowListOf(flow);
 
   // print entire LL
-  printEntireLinkedList(flow);
+  // printEntireLinkedList(flow);
+  // printEntireLinkedList(flow->next);
 
   // Free alocated objects
-  free(eo);
   freeFlowList(flow);
 }
 
-void Test_Test()
+void Test_Promotecoflows()
 {
+  // TODO:
 }
 
+void Test_fq_flow_add_tail()
+{
+  // Some dummy data configurations
+  struct fq_flow_head *flowList1Head = malloc(sizeof(struct fq_flow_head));
+  struct fq_flow *flow1 = malloc(sizeof(struct fq_flow));
+  flow1->socket_hash = 123;
+  flowList1Head->first = flow1;
+  flowList1Head->last = flow1;
+
+  eo->dataObjType = FlowList;
+
+  struct fq_flow *flow1Add = malloc(sizeof(struct fq_flow));
+  flow1Add->socket_hash = 456;
+
+  struct fq_flow *flow2 = malloc(sizeof(struct fq_flow));
+  flow2->socket_hash = 123;
+  flow2->next = malloc(sizeof(struct fq_flow));
+  flow2->next->socket_hash = 456;
+
+  // Set tests number
+  totalTestsNumber = 4;
+
+  fq_flow_add_tail(flowList1Head, flow1Add);
+
+  // Tests
+  expect((void *)flowList1Head->first)->toHaveLengthOf(2);
+  expect((void *)flowList1Head->first)->toEqualFlowListOf(flow2);
+
+  // printEntireLinkedList(flow1);
+  // printEntireLinkedList(flow2);
+  
+  struct fq_flow_head *flowList3Head = malloc(sizeof(struct fq_flow_head));
+  struct fq_flow *flow3Add = malloc(sizeof(struct fq_flow));
+  flow3Add->socket_hash = 123;
+  
+  struct fq_flow *flow4 = malloc(sizeof(struct fq_flow));
+  flow4->socket_hash = 123;
+  
+  fq_flow_add_tail(flowList3Head, flow3Add);
+  
+  // Tests
+  expect((void *)flowList3Head->first)->toHaveLengthOf(1);
+  expect((void *)flowList3Head->first)->toEqualFlowListOf(flow4);
+}
+
+/**
+ * Main Testing Program.
+ */
 int main()
 {
   printTestingSessionStartText();
 
-  expect_tests();
+  // Run test suite
+  // before();
+  // Test_Sample();
+  // after();
 
+  before();
+  Test_fq_flow_add_tail();
+  after();
+
+  printTestingSessionResult();
   printTestingSessionEndText();
+
   return 0;
 }
