@@ -3,7 +3,7 @@
 // #include "./Test/TestUtilities.h"
 #include "Util/testing.h"
 
-void before()
+void before(char *testSuiteName)
 {
   // initialize expect object
   eo = malloc(sizeof(struct expectObj));
@@ -15,12 +15,16 @@ void before()
   eo->toHaveLengthOf = toHaveLengthOf;
   eo->toEqualFlowListOf = toEqualFlowListOf;
   eo->toEqualNumberValueOf = toEqualNumberValueOf;
+
+  printTestingSuiteStartText(testSuiteName);
 }
 
 void after()
 {
   // free eo memory
   free(eo);
+
+  printTestingSuiteEndText();
 }
 
 /**
@@ -38,9 +42,6 @@ void Test_Sample()
   eo->dataObj = (void *)flow;
   eo->dataObjType = FlowList;
 
-  // Set tests number
-  totalTestsNumber = 5;
-
   // Tests
   expect((void *)flow)->toBeDataTypeOf(FlowList);
   expect((void *)flow)->toHaveSocketHashAtIndexOf(123, 1);
@@ -56,50 +57,81 @@ void Test_Sample()
   freeFlowList(flow);
 }
 
-// TODO:
+// TODO: use toHaveSocketHashAtIndexOf()
 void Test_Promotecoflows()
 {
-  // TODO: initialize fq_sched_data + arr[] 
-  // ? what is unsigned arr[] used for? what array is this? 
-  // ? I need to know the arguments of Promotecoflows() to test it
-  
-  // struct fq_flow f;
-  // struct fq_flow g;
-  // struct fq_flow h;
-  // struct fq_flow i;
-  // struct fq_flow j;
-  // struct fq_flow coflow;
-  // struct fq_flow_head oldFlowshead;
-  // struct fq_flow_head newFlowshead;
-  // struct fq_flow_head coFlowshead;
+  // dummy parameters
+  struct fq_flow *dummyCoflow = malloc(sizeof(struct fq_flow));
+  struct fq_flow *dummyFlow = malloc(sizeof(struct fq_flow));
 
-  // f.sk = 1;
-  // g.sk = 2;
-  // h.sk = 3;
-  // i.sk = 4;
-  // j.sk = 5;
-  // coflow.sk = 6;
-  // coFlowshead = q->co_flows;
-  // oldFlowshead = q->old_flows;
-  // newFlowshead = q->new_flows;
+  struct fq_sched_data *q = malloc(sizeof(struct fq_sched_data));
 
-  // struct fq_flow_head *coFlowsheadptr = &(q->co_flows);
-  // struct fq_flow_head *newFlowsheadptr = &(q->new_flows);
-  // struct fq_flow_head *oldFlowsheadptr = &(q->co_flows);
+  struct fq_flow *f = malloc(sizeof(struct fq_flow));
+  struct fq_flow *g = malloc(sizeof(struct fq_flow));
+  struct fq_flow *h = malloc(sizeof(struct fq_flow));
+  struct fq_flow *i = malloc(sizeof(struct fq_flow));
+  struct fq_flow *j = malloc(sizeof(struct fq_flow));
 
-  // f.socket_hash = f.sk + 10;
-  // g.socket_hash = g.sk + 10;
-  // i.socket_hash = i.sk + 10;
-  // h.socket_hash = h.sk + 10;
-  // j.socket_hash = j.sk + 10;
+  struct fq_flow_head *oldFlowshead = malloc(sizeof(struct fq_flow_head));
+  struct fq_flow_head *newFlowshead = malloc(sizeof(struct fq_flow_head));
+  struct fq_flow_head *coFlowshead = malloc(sizeof(struct fq_flow_head));
 
-  // coflow.socket_hash = coflow.sk + 10;
+  // socket hash is a file descriptor
+  f->sk = 1;
+  g->sk = 2;
+  h->sk = 3;
+  i->sk = 4;
+  j->sk = 5;
 
-  // fq_flow_add_tail(&q->new_flows, &f);
-  // fq_flow_add_tail(&q->new_flows, &g);
-  // fq_flow_add_tail(&q->new_flows, &j);
-  // fq_flow_add_tail(&q->old_flows, &h);
-  // fq_flow_add_tail(&q->old_flows, &i);
+  // random unqiue numbers
+  f->socket_hash = (u32)f->sk + 10;
+  g->socket_hash = (u32)g->sk + 10;
+  i->socket_hash = (u32)i->sk + 10;
+  h->socket_hash = (u32)h->sk + 10;
+  j->socket_hash = (u32)j->sk + 10;
+
+  // populate new flows list
+  fq_flow_add_tail(newFlowshead, f);
+  fq_flow_add_tail(newFlowshead, g);
+  fq_flow_add_tail(newFlowshead, j);
+
+  // populate old flows list
+  fq_flow_add_tail(oldFlowshead, h);
+  fq_flow_add_tail(oldFlowshead, i);
+
+  // create dummy data to match against resulting coflows list
+  struct fq_flow_head *coFlowsheadDummy = malloc(sizeof(struct fq_flow_head));
+  struct fq_flow *dummyFlowF = malloc(sizeof(struct fq_flow));
+  dummyFlowF->sk = 1;
+  dummyFlowF->socket_hash = (u32)dummyFlowF->sk + 10;
+  struct fq_flow *dummyFlowG = malloc(sizeof(struct fq_flow));
+  dummyFlowG->sk = 2;
+  dummyFlowG->socket_hash = (u32)dummyFlowG->sk + 10;
+  struct fq_flow *dummyFlowH = malloc(sizeof(struct fq_flow));
+  dummyFlowH->sk = 3;
+  dummyFlowH->socket_hash = (u32)dummyFlowH->sk + 10;
+  fq_flow_add_tail(coFlowsheadDummy, dummyFlowF);
+  fq_flow_add_tail(coFlowsheadDummy, dummyFlowG);
+  fq_flow_add_tail(coFlowsheadDummy, dummyFlowH);
+
+  // initialize arr: 2 from new + 1 from old
+  // used for identifying whether a flow belongs to a coflow set
+  unsigned arr[] = {f->socket_hash, g->socket_hash, h->socket_hash};
+  int lengthOfarray = 3;
+
+  // 1 on success, 0 on fail
+  int successCode = Promotecoflows(oldFlowshead, newFlowshead, coFlowshead, dummyFlow, dummyCoflow, arr, lengthOfarray);
+
+  // check lengths of flow lists
+  expect((void *)coFlowshead->first)->toHaveLengthOf(3);
+  expect((void *)newFlowshead->first)->toHaveLengthOf(1);
+  expect((void *)oldFlowshead->first)->toHaveLengthOf(1);
+
+  // check equality of lists using socket hash
+  expect((void *)coFlowshead->first)->toEqualFlowListOf(coFlowsheadDummy->first);
+
+  // check success code returned from function
+  expect((void *)successCode)->toEqualNumberValueOf(1);
 }
 
 void Test_valuePresentInArray()
@@ -109,8 +141,6 @@ void Test_valuePresentInArray()
   u32 arr[] = {1, 2, 3, 4, 5};
   int res1 = valuePresentInArray(val1, arr, 5);
   int res2 = valuePresentInArray(val2, arr, 5);
-
-  totalTestsNumber = 2;
 
   expect(res1)->toEqualNumberValueOf(2);
   expect(res2)->toEqualNumberValueOf(-1);
@@ -134,9 +164,6 @@ void Test_fq_flow_add_tail()
   flow2->socket_hash = 123;
   flow2->next = malloc(sizeof(struct fq_flow));
   flow2->next->socket_hash = 456;
-
-  // Set tests number
-  totalTestsNumber = 4;
 
   fq_flow_add_tail(flowList1Head, flow1Add);
 
@@ -178,16 +205,20 @@ int main()
 
   // *** TEST SUITES ***
 
-  // before();
+  // before("Test_Sample");
   // Test_Sample();
   // after();
 
-  // before();
+  // before("Test_fq_flow_add_tail");
   // Test_fq_flow_add_tail();
   // after();
 
-  // before();
+  // before("Test_valuePresentInArray");
   // Test_valuePresentInArray();
+  // after();
+
+  // before("Test_Promotecoflows");
+  // Test_Promotecoflows();
   // after();
 
   printTestingSessionResult();

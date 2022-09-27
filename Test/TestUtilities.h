@@ -182,6 +182,7 @@ static void fq_flow_add_tail(struct fq_flow_head *head, struct fq_flow *flow)
   flow->next = NULL;
 }
 
+// ! coflow & flow is not needed
 int Promotecoflows(struct fq_flow_head *oldFlow, struct fq_flow_head *newFlow,
                    struct fq_flow_head *coflowhead, struct fq_flow *flow,
                    struct fq_flow *coflow, unsigned arr[], int lengthOfarray)

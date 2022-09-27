@@ -108,21 +108,35 @@ void reset()
 void printTestingSessionStartText()
 {
   magenta();
-  printf("\n*------------- <UNIT TESTING SESSION> -------------*\n\n");
+  printf("\n*----------------------- <UNIT TESTING SESSION> -----------------------*\n\n");
   reset();
 }
 
 void printTestingSessionEndText()
 {
   magenta();
-  printf("\n*------------- <END OF SESSION> -------------*\n\n");
+  printf("\n*----------------------- <END OF SESSION> -----------------------*\n\n");
+  reset();
+}
+
+void printTestingSuiteStartText(char *testSuiteName)
+{
+  magenta();
+  printf("\n**---------- <Test Suite: %s> ----------**\n\n", testSuiteName);
+  reset();
+}
+
+void printTestingSuiteEndText()
+{
+  magenta();
+  printf("**------------------------------**\n\n\n");
   reset();
 }
 
 void printSingleTestStartText(char *testName, int curTestNum, int totTestsNum)
 {
   blue();
-  printf("<----- Test %d out of %d: [%s] ----->\n", curTestNum, totTestsNum, testName);
+  printf("<----- Test %d: [%s] ----->\n", curTestNum, testName);
   reset();
 }
 
@@ -249,6 +263,8 @@ int getFlowListLength(struct fq_flow *listHead)
  */
 expectObj *expect(void *obj)
 {
+  totalTestsNumber++;
+
   eo->dataObj = obj;
   return eo;
 }
@@ -316,7 +332,9 @@ void toHaveLengthOf(int expectedLength)
 }
 
 /**
- * Socket hash is used to check the equality of two flow lists
+ * Socket hash is used to check the equality of two flow lists. If
+ * socket hash is not unique, then we needed to use another variable
+ * for unique identification.
  */
 void toEqualFlowListOf(struct fq_flow *expectedListHead)
 {
@@ -355,7 +373,7 @@ void toEqualNumberValueOf(int number)
   int testFailed = 0;
 
   currentTestNumber++;
-  printSingleTestStartText("toEqualFlowListOf", currentTestNumber, totalTestsNumber);
+  printSingleTestStartText("toEqualNumberValueOf", currentTestNumber, totalTestsNumber);
 
   printf("Data Object Number Value: %d\n", (int)eo->dataObj);
   printf("Expected Number Value: %d\n", number);
