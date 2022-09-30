@@ -1,10 +1,30 @@
 #include <stdint.h>
 #include <stdio.h>
+#include <time.h>
 #include "../Util/rbtree.h"
 
 typedef uint8_t u8;
+typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
+typedef int8_t s8;
+typedef int16_t s16;
+typedef int32_t s32;
+typedef int64_t s64;
+
+typedef s64 ktime_t;
+
+typedef unsigned int __u32;
+
+struct qdisc_skb_head
+{
+  __u32 qlen;
+};
+
+struct Qdisc
+{
+  struct qdisc_skb_head q;
+};
 
 struct sock
 {
@@ -17,8 +37,43 @@ struct sk_buff
   struct sk_buff *next;
   struct sk_buff *prev;
   struct sock *sk;
+  ktime_t tstamp;
+  __u32 priority;
+  struct rb_node rbnode;
+  char cb[48];
+
   // TODO: incomplete
 };
+
+struct fq_skb_cb
+{
+  u64 time_to_send;
+};
+
+struct qdisc_skb_cb
+{
+  struct
+  {
+    unsigned int pkt_len;
+    u16 slave_dev_queue_mapping;
+    u16 tc_classid;
+  };
+#define QDISC_CB_PRIV_LEN 20
+  unsigned char data[QDISC_CB_PRIV_LEN];
+};
+
+static inline struct qdisc_skb_cb *qdisc_skb_cb(const struct sk_buff *skb)
+{
+  return (struct qdisc_skb_cb *)skb->cb;
+}
+
+// ! THIS NEEDS TO BE CHECKED
+// ! FOR NOW, assume fq_skb_cb() works
+static inline struct fq_skb_cb *fq_skb_cb(struct sk_buff *skb)
+{
+  // qdisc_cb_private_validate(skb, sizeof(struct fq_skb_cb));
+  return (struct fq_skb_cb *)qdisc_skb_cb(skb)->data;
+}
 
 struct qdisc_watchdog
 {
@@ -56,11 +111,6 @@ unsigned long pCoflow[nFlows];
 
 unsigned long time_first, time_nw, time_elapsed;
 
-struct fq_skb_cb
-{
-  u64 time_to_send;
-};
-
 /*
  * Per flow structure, dynamically allocated.
  * If packets have monotically increasing time_to_send, they are placed in O(1)
@@ -81,6 +131,7 @@ struct fq_flow
   u32 socket_hash; /* sk_hash */
   int qlen;        /* number of packets in flow queue */
 
+  // * dequeue uses credits & lists -> so we can manually mock them up *
   /* Second cache line, used in fq_dequeue() */
   int credit;
   /* 32bit hole on 64bit arches */
@@ -305,6 +356,312 @@ loop:
 
     goto loop;
   }
+
+  return 1;
+}
+
+static struct fq_flow *fq_classify(struct sk_buff *skb,
+                                   struct fq_sched_data *q)
+{
+  struct rb_node **p, *parent;
+  struct sock *sk = skb->sk;
+  struct rb_root *root;
+  struct fq_flow *f;
+
+  // printk("In add values address pair is  : %lld \n ", sk->sk_portpair);
+  // printk("In add values destination port is  : %lld \n ", sk->sk_dport);
+  // printk("In add values hash pair is  : %d \n ", skb_get_hash(skb));
+
+  // /* warning: no starvation prevention... */
+  // if (unlikely((skb->priority & TC_PRIO_MAX) == TC_PRIO_CONTROL))
+  //   return &q->internal;
+
+  /* SYNACK messages are attached to a TCP_NEW_SYN_RECV request socket
+   * or a listener (SYNCOOKIE mode)
+   * 1) request sockets are not full blown,
+   *    they do not contain sk_pacing_rate
+   * 2) They are not part of a 'flow' yet
+   * 3) We do not want to rate limit them (eg SYNFLOOD attack),
+   *    especially if the listener set SO_MAX_PACING_RATE
+   * 4) We pretend they are orphaned
+   */
+  // if (!sk || sk_listener(sk))
+  // {
+  //   unsigned long hash = skb_get_hash(skb) & q->orphan_mask;
+
+  //   /* By forcing low order bit to 1, we make sure to not
+  //    * collide with a local flow (socket pointers are word aligned)
+  //    */
+  //   sk = (struct sock *)((hash << 1) | 1UL);
+
+  //   // printk("hash value in fq classify  after sk creation : %lu \n ", hash );
+
+  //   skb_orphan(skb);
+  // }
+  // else if (sk->sk_state == TCP_CLOSE)
+  // {
+  //   unsigned long hash = skb_get_hash(skb) & q->orphan_mask;
+
+  //   // printk("hash  value in fq classify in else if  of each flow is  : %lu \n
+  //   // ",hash );
+  //   /*
+  //    * Sockets in TCP_CLOSE are non connected.
+  //    * Typical use case is UDP sockets, they can send packets
+  //    * with sendto() to many different destinations.
+  //    * We probably could use a generic bit advertising
+  //    * non connected sockets, instead of sk_state == TCP_CLOSE,
+  //    * if we care enough.
+  //    */
+  //   sk = (struct sock *)((hash << 1) | 1UL);
+  // }
+
+  root = &q->fq_root[hash_ptr(sk, q->fq_trees_log)];
+
+  // if (q->flows >= (2U << q->fq_trees_log) && q->inactive_flows > q->flows / 2)
+  //   fq_gc(q, root, sk);
+
+  p = &root->rb_node;
+  parent = NULL;
+  while (*p)
+  {
+    parent = *p;
+
+    // !!!!! Don't know why it's an ERROR !!!!!
+    f = rb_entry(parent, struct fq_flow, fq_node);
+    if (f->sk == sk)
+    {
+      /* socket might have been reallocated, so check
+       * if its sk_hash is the same.
+       * It not, we need to refill credit with
+       * initial quantum
+       */
+      // int lengthOfarray = 0;
+
+      // int i;
+
+      // for (i = 0; i < (sizeof(pFlowid) / sizeof(pFlowid[0])); i++)
+      // {
+      //   lengthOfarray++;
+      // }
+
+      // if (unlikely(skb->sk == sk && f->socket_hash != sk->sk_hash))
+      // {
+      //   f->credit = q->initial_quantum;
+      //   f->socket_hash = sk->sk_hash;
+      //   // printk("flow hash in rb tree value of each flow is  : %u \n
+      //   // ",f->socket_hash );
+      //   if ((pFlowid[0] == -1) && (pFlowid[1] == -1))
+      //   {
+      //     pFlowid[0] = f->socket_hash;
+      //     printk(
+      //         "flow pflowid 0 hash in rb tree value of each flow is  : %u \n ",
+      //         pFlowid[0]);
+      //     if (pFlowid[0] == 0)
+      //     {
+      //       resetFlowid(pFlowid, lengthOfarray);
+      //     }
+      //   }
+
+      //   if ((pFlowid[0] != -1) && (pFlowid[1] == -1))
+      //   {
+      //     int lVal =
+      //         valuePresentInArray(f->socket_hash, pFlowid, lengthOfarray);
+
+      //     if (pFlowid[0] != f->socket_hash)
+      //       pFlowid[1] = f->socket_hash;
+
+      //     printk(
+      //         "flow pflowid 1 hash in rb tree value of each flow is  : %u \n ",
+      //         pFlowid[1]);
+
+      //     if ((pFlowid[1] == 0))
+      //     {
+      //       resetFlowid(pFlowid, lengthOfarray);
+      //     }
+      //   }
+
+      //   if (q->rate_enable)
+      //     smp_store_release(&sk->sk_pacing_status, SK_PACING_FQ);
+      //   if (fq_flow_is_throttled(f))
+      //     fq_flow_unset_throttled(q, f);
+      //   f->time_next_packet = 0ULL;
+      // }
+      return f;
+    }
+    if (f->sk > sk)
+      p = &parent->rb_right;
+    else
+      p = &parent->rb_left;
+  }
+
+  // *** NEW FLOW ***
+
+  struct fq_flow *f = malloc(sizeof(struct fq_flow));
+  // f = kmem_cache_zalloc(fq_flow_cachep, GFP_ATOMIC | __GFP_NOWARN);
+  // if (unlikely(!f))
+  // {
+  //   q->stat_allocation_errors++;
+  //   return &q->internal;
+  // }
+  /* f->t_root is already zeroed after kmem_cache_zalloc() */
+
+  // fq_flow_set_detached(f);
+  f->sk = sk;
+  // if (skb->sk == sk)
+  // {
+  //   f->socket_hash = sk->sk_hash;
+  //   if (q->rate_enable)
+  //     smp_store_release(&sk->sk_pacing_status, SK_PACING_FQ);
+  // }
+  f->credit = q->initial_quantum;
+
+  rb_link_node(&f->fq_node, parent, p);
+  rb_insert_color(&f->fq_node, root);
+
+  // q->flows++;
+  // q->inactive_flows++;
+  // printk("flow hash in after classification  : %u \n ",f->socket_hash );
+  return f;
+}
+
+static void flow_queue_add(struct fq_flow *flow, struct sk_buff *skb)
+{
+  struct rb_node **p, *parent;
+  struct sk_buff *head, *aux;
+
+  head = flow->head;
+  if (!head ||
+      fq_skb_cb(skb)->time_to_send >= fq_skb_cb(flow->tail)->time_to_send)
+  {
+    if (!head)
+      flow->head = skb;
+    else
+      flow->tail->next = skb;
+    flow->tail = skb;
+    skb->next = NULL;
+    return;
+  }
+
+  p = &flow->t_root.rb_node;
+  parent = NULL;
+
+  while (*p)
+  {
+    parent = *p;
+    aux = rb_to_skb(parent);
+    if (fq_skb_cb(skb)->time_to_send >= fq_skb_cb(aux)->time_to_send)
+      p = &parent->rb_right;
+    else
+      p = &parent->rb_left;
+  }
+  // printk("In add values skb after classification to check in add is  : %d \n
+  // ", skb_get_hash(skb));
+  rb_link_node(&skb->rbnode, parent, p);
+  rb_insert_color(&skb->rbnode, &flow->t_root);
+}
+
+// * need a dummy skb & sch
+static int fq_enqueue(struct sk_buff *skb, struct Qdisc *sch,
+                      struct sk_buff **to_free)
+{
+  struct fq_sched_data *q = qdisc_priv(sch);
+  struct fq_flow *f;
+
+  // if (unlikely(sch->q.qlen >= sch->limit))
+  //   return qdisc_drop(skb, sch, to_free);
+
+  if (!skb->tstamp)
+  {
+    // * replaced ktime func with time()
+    fq_skb_cb(skb)->time_to_send = q->ktime_cache = (u64)time(NULL);
+  }
+  else
+  {
+    /* Check if packet timestamp is too far in the future.
+     * Try first if our cached value, to avoid ktime_get_ns()
+     * cost in most cases.
+     */
+    // if (fq_packet_beyond_horizon(skb, q))
+    // {
+    //   /* Refresh our cache and check another time */
+    //   q->ktime_cache = ktime_get_ns();
+    //   if (fq_packet_beyond_horizon(skb, q))
+    //   {
+    //     if (q->horizon_drop)
+    //     {
+    //       q->stat_horizon_drops++;
+    //       return qdisc_drop(skb, sch, to_free);
+    //     }
+    //     q->stat_horizon_caps++;
+    //     skb->tstamp = q->ktime_cache + q->horizon;
+    //   }
+    // }
+
+    fq_skb_cb(skb)->time_to_send = skb->tstamp;
+  }
+
+  f = fq_classify(skb, q);
+  // if (unlikely(f->qlen >= q->flow_plimit && f != &q->internal))
+  // {
+  //   q->stat_flows_plimit++;
+  //   return qdisc_drop(skb, sch, to_free);
+  // }
+
+  f->qlen++;
+  // qdisc_qstats_backlog_inc(sch, skb);
+  // if (fq_flow_is_detached(f))
+  // {
+  //   fq_flow_add_tail(&q->new_flows, f);
+
+  //   if (time_after(jiffies, f->age + q->flow_refill_delay))
+  //     f->credit = max_t(u32, f->credit, q->quantum);
+  //   q->inactive_flows--;
+  // }
+
+  /* Note: this overwrites f->age */
+
+  // printk("hash of flow value : %u \n ", (f->socket_hash & q->orphan_mask) );
+
+  /*printk("skb get hash value  : %u \n ", skb_get_hash(skb));
+     unsigned long pHash = skb_get_hash(skb) & q->orphan_mask;
+     printk("pHash value  : %lu \n ", pHash); */
+
+  // * fq_classify identifies the flow itself
+  // * flow_queue_add identifies which flow the packet belongs to
+  flow_queue_add(f, skb);
+
+  /*
+     setting the barrier bits
+     there are 100000 barriers for the co-flow
+     individual bits are set by two variabes
+     time to send being modified
+   */
+
+  int lengthOfarray = 0;
+
+  int i;
+
+  for (i = 0; i < (sizeof(pFlowid) / sizeof(pFlowid[0])); i++)
+  {
+    lengthOfarray++;
+  }
+  int pValue = valuePresentInArray(f->socket_hash, pFlowid, lengthOfarray);
+
+  if (pValue != -1)
+  {
+    barrier[barriercounter_flow[pValue]] =
+        barrier[barriercounter_flow[pValue]] | 1 << pValue;
+
+    fq_skb_cb(skb)->time_to_send = (u64)time(NULL) + timeInterval;
+
+    barriercounter_flow[pValue]++;
+  }
+
+  // if (unlikely(f == &q->internal))
+  // {
+  //   q->stat_internal_packets++;
+  // }
+  sch->q.qlen++;
 
   return 1;
 }

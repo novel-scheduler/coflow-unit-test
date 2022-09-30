@@ -196,6 +196,15 @@ void Test_fq_flow_add_tail()
   free(flowList3Head);
 }
 
+void Test_fq_enqueue()
+{
+  struct sk_buff *skb = malloc(sizeof(struct sk_buff));
+  struct Qdisc *sch = malloc(sizeof(struct Qdisc));
+  struct sk_buff *to_free = malloc(sizeof(struct sk_buff));
+
+  fq_enqueue(skb, sch, to_free);
+}
+
 /**
  * Main Testing Program.
  */
@@ -220,6 +229,10 @@ int main()
   // before("Test_Promotecoflows");
   // Test_Promotecoflows();
   // after();
+
+  before("Test_fq_enqueue");
+  Test_fq_enqueue();
+  after();
 
   printTestingSessionResult();
   printTestingSessionEndText();

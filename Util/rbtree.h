@@ -36,9 +36,23 @@ struct rb_root
 
 #define rb_parent(r) ((struct rb_node *)((r)->__rb_parent_color & ~3))
 
+// * added
+#define __same_type(a, b) __builtin_types_compatible_p(typeof(a), typeof(b))
+
+// * added
+#define container_of(ptr, type, member) ({				\
+	void *__mptr = (void *)(ptr);					\
+	static_assert(__same_type(*(ptr), ((type *)0)->member) ||	\
+		      __same_type(*(ptr), void),			\
+		      "pointer type mismatch in container_of()");	\
+	((type *)(__mptr - offsetof(type, member))); })
+
 #define RB_ROOT \
   (struct rb_root) { NULL, }
 #define rb_entry(ptr, type, member) container_of(ptr, type, member)
+
+// * added
+#define rb_to_skb(rb) rb_entry_safe(rb, struct sk_buff, rbnode)
 
 #define RB_EMPTY_ROOT(root) (READ_ONCE((root)->rb_node) == NULL)
 
