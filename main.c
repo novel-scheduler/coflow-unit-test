@@ -1,3 +1,5 @@
+#include "./Lib/build_bug.h";
+#include "./Lib/hash.h";
 #include <stdio.h>
 #include <stdlib.h>
 // #include "./Test/TestUtilities.h"
@@ -230,6 +232,10 @@ int main()
   // before("Test_Promotecoflows");
   // Test_Promotecoflows();
   // after();
+
+  // * MACRO TEST *
+  struct rb_node *parent;
+  test(parent, struct fq_flow, fq_node);
 
   before("Test_fq_enqueue");
   Test_fq_enqueue();

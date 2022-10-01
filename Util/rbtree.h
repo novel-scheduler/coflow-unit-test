@@ -37,6 +37,12 @@ struct rb_root
 #define rb_parent(r) ((struct rb_node *)((r)->__rb_parent_color & ~3))
 
 // * added
+#define offsetof(TYPE, MEMBER) ((size_t) & ((TYPE *)0)->MEMBER)
+
+// * TEST
+#define test(ptr, type, member) __same_type(*(ptr), ((type *)0)->member)
+
+// * added
 #define __same_type(a, b) __builtin_types_compatible_p(typeof(a), typeof(b))
 
 // * added

@@ -496,7 +496,7 @@ static struct fq_flow *fq_classify(struct sk_buff *skb,
 
   // *** NEW FLOW ***
 
-  struct fq_flow *f = malloc(sizeof(struct fq_flow));
+  f = malloc(sizeof(struct fq_flow));
   // f = kmem_cache_zalloc(fq_flow_cachep, GFP_ATOMIC | __GFP_NOWARN);
   // if (unlikely(!f))
   // {
@@ -564,7 +564,9 @@ static void flow_queue_add(struct fq_flow *flow, struct sk_buff *skb)
 static int fq_enqueue(struct sk_buff *skb, struct Qdisc *sch,
                       struct sk_buff **to_free)
 {
-  struct fq_sched_data *q = qdisc_priv(sch);
+  // struct fq_sched_data *q = qdisc_priv(sch);
+  // * DUMMY fq_sched_data
+  struct fq_sched_data *q = malloc(sizeof(struct fq_sched_data));
   struct fq_flow *f;
 
   // if (unlikely(sch->q.qlen >= sch->limit))
