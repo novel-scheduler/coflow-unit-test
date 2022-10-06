@@ -1,16 +1,10 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <time.h>
-#include "../Util/rbtree.h"
-
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-typedef int8_t s8;
-typedef int16_t s16;
-typedef int32_t s32;
-typedef int64_t s64;
+#include <math.h>
+#include <stdbool.h>
+#include "./temp_types.h"
+#include "../Lib/rbtree.c"
 
 typedef s64 ktime_t;
 
@@ -360,13 +354,24 @@ loop:
   return 1;
 }
 
+static void fq_flow_set_detached(struct fq_flow *f) { f->age = 100 | 1UL; }
+
+static bool fq_flow_is_detached(const struct fq_flow *f)
+{
+  return !!(f->age & 1UL);
+}
+
 static struct fq_flow *fq_classify(struct sk_buff *skb,
                                    struct fq_sched_data *q)
 {
+  printf("\n* FUNC: fq_classify\n");
+
   struct rb_node **p, *parent;
   struct sock *sk = skb->sk;
   struct rb_root *root;
   struct fq_flow *f;
+
+  printf("sk->hash IN:fq_classify: %u\n", sk->sk_hash);
 
   // printk("In add values address pair is  : %lld \n ", sk->sk_portpair);
   // printk("In add values destination port is  : %lld \n ", sk->sk_dport);
@@ -415,21 +420,35 @@ static struct fq_flow *fq_classify(struct sk_buff *skb,
   //   sk = (struct sock *)((hash << 1) | 1UL);
   // }
 
+  printf("* BEFORE: getting root\n");
   root = &q->fq_root[hash_ptr(sk, q->fq_trees_log)];
+  if (root == NULL)
+  {
+    printf("ERROR: root is NOT initialized\n");
+  }
 
   // if (q->flows >= (2U << q->fq_trees_log) && q->inactive_flows > q->flows / 2)
   //   fq_gc(q, root, sk);
 
   p = &root->rb_node;
+  printf("p != NULL: %d\n", p != NULL);
+
+  // ! *p is failing
+  printf("*p != NULL: %d\n", *p != NULL);
+  // printf("rb color: %u\n", (*p)->__rb_parent_color);
+
   parent = NULL;
+  printf("* BEFORE: loop\n");
   while (*p)
   {
+    printf("** LOOP - while (*p)\n");
     parent = *p;
 
     // !!!!! Don't know why it's an ERROR !!!!!
     f = rb_entry(parent, struct fq_flow, fq_node);
     if (f->sk == sk)
     {
+      printf("*** MATCH!\n");
       /* socket might have been reallocated, so check
        * if its sk_hash is the same.
        * It not, we need to refill credit with
@@ -489,13 +508,20 @@ static struct fq_flow *fq_classify(struct sk_buff *skb,
       return f;
     }
     if (f->sk > sk)
+    {
+      printf("*** NO MATCH: going RIGHT!\n");
       p = &parent->rb_right;
+    }
     else
+    {
+      printf("*** NO MATCH: going LEFT!\n");
       p = &parent->rb_left;
+    }
   }
 
   // *** NEW FLOW ***
 
+  printf("* NEW FLOW\n");
   f = malloc(sizeof(struct fq_flow));
   // f = kmem_cache_zalloc(fq_flow_cachep, GFP_ATOMIC | __GFP_NOWARN);
   // if (unlikely(!f))
@@ -507,25 +533,31 @@ static struct fq_flow *fq_classify(struct sk_buff *skb,
 
   // fq_flow_set_detached(f);
   f->sk = sk;
-  // if (skb->sk == sk)
-  // {
-  //   f->socket_hash = sk->sk_hash;
-  //   if (q->rate_enable)
-  //     smp_store_release(&sk->sk_pacing_status, SK_PACING_FQ);
-  // }
+  if (skb->sk == sk)
+  {
+    f->socket_hash = sk->sk_hash;
+    // if (q->rate_enable)
+    // smp_store_release(&sk->sk_pacing_status, SK_PACING_FQ);
+  }
   f->credit = q->initial_quantum;
+
+  printf("f->sk->sk_hash: %u\n", f->sk->sk_hash);
+  printf("f->credit: %d\n", f->credit);
 
   rb_link_node(&f->fq_node, parent, p);
   rb_insert_color(&f->fq_node, root);
 
-  // q->flows++;
-  // q->inactive_flows++;
-  // printk("flow hash in after classification  : %u \n ",f->socket_hash );
+  q->flows++;
+  q->inactive_flows++;
+  printf("flow hash in after classification  : %u \n ", f->socket_hash);
+
+  printf("* END-FUNC: fq_classify\n");
   return f;
 }
 
 static void flow_queue_add(struct fq_flow *flow, struct sk_buff *skb)
 {
+  printf("\n* FUNC: flow_queue_add\n");
   struct rb_node **p, *parent;
   struct sk_buff *head, *aux;
 
@@ -533,52 +565,112 @@ static void flow_queue_add(struct fq_flow *flow, struct sk_buff *skb)
   if (!head ||
       fq_skb_cb(skb)->time_to_send >= fq_skb_cb(flow->tail)->time_to_send)
   {
+    printf("!head OR fq_skb_cb(skb)->time_to_send >= fq_skb_cb(flow->tail)->time_to_send\n");
+
     if (!head)
+    {
+      printf("!head == TRUE\n");
       flow->head = skb;
+      printf("flow->head->sk->sk_hash: %u\n", flow->head->sk->sk_hash);
+    }
     else
+    {
+      printf("!head == FALSE\n");
       flow->tail->next = skb;
+    }
     flow->tail = skb;
     skb->next = NULL;
+
+    printf("* END-FUNC: flow_queue_add\n");
     return;
   }
 
   p = &flow->t_root.rb_node;
   parent = NULL;
 
+  printf("* BEFORE: while (*p)\n");
   while (*p)
   {
     parent = *p;
     aux = rb_to_skb(parent);
     if (fq_skb_cb(skb)->time_to_send >= fq_skb_cb(aux)->time_to_send)
+    {
+      printf("** RIGHT\n");
       p = &parent->rb_right;
+    }
     else
+    {
+      printf("** LEFT\n");
       p = &parent->rb_left;
+    }
   }
   // printk("In add values skb after classification to check in add is  : %d \n
   // ", skb_get_hash(skb));
+  printf("* BEFORE: rb_link_node & rb_insert_color\n");
+
   rb_link_node(&skb->rbnode, parent, p);
   rb_insert_color(&skb->rbnode, &flow->t_root);
+
+  printf("* END-FUNC: flow_queue_add\n");
+}
+
+static struct fq_sched_data *fq_init()
+{
+  struct fq_sched_data *q = malloc(sizeof(struct fq_sched_data));
+
+  q->flow_plimit = 100;
+  // HEON: 9000 as mtu
+  q->quantum = 2 * 9000;
+  q->initial_quantum = 10 * 9000;
+  // getconf CLK_TCK -> 100
+  q->flow_refill_delay = 100 / 100 * 4;
+  // q->quantum = 2 * psched_mtu(qdisc_dev(sch));
+  // q->initial_quantum = 10 * psched_mtu(qdisc_dev(sch));
+  // q->flow_refill_delay = msecs_to_jiffies(40);
+  q->flow_max_rate = ~0UL;
+  q->time_next_delayed_flow = ~0ULL;
+  q->rate_enable = 1;
+
+  q->new_flows.first = NULL;
+  q->old_flows.first = NULL;
+  q->co_flows.first = NULL;
+
+  q->delayed = RB_ROOT;
+  q->fq_root = malloc(sizeof(struct rb_root));
+  // q->fq_root->rb_node = malloc(sizeof(struct rb_node));
+  q->fq_trees_log = log2(1024);
+  q->orphan_mask = 1024 - 1;
+  q->low_rate_threshold = 550000 / 8;
+
+  return q;
 }
 
 // * need a dummy skb & sch
-static int fq_enqueue(struct sk_buff *skb, struct Qdisc *sch,
-                      struct sk_buff **to_free)
+static int fq_enqueue(struct fq_sched_data *q, struct sk_buff *skb, struct Qdisc *sch, struct sk_buff **to_free)
 {
+  printf("*FUNC: fq_enqueue\n");
+
+  printf("skb hash: %u\n", skb->sk->sk_hash);
+
   // struct fq_sched_data *q = qdisc_priv(sch);
   // * DUMMY fq_sched_data
-  struct fq_sched_data *q = malloc(sizeof(struct fq_sched_data));
-  struct fq_flow *f;
+  struct fq_flow *f = NULL;
 
   // if (unlikely(sch->q.qlen >= sch->limit))
   //   return qdisc_drop(skb, sch, to_free);
 
+  printf("*BEFORE: if (!skb->tstamp)\n");
   if (!skb->tstamp)
   {
+    printf("!skb->tstamp -> TRUE \n");
     // * replaced ktime func with time()
     fq_skb_cb(skb)->time_to_send = q->ktime_cache = (u64)time(NULL);
+
+    printf("skb->tstamp: %ld\n", skb->tstamp);
   }
   else
   {
+    printf("!skb->tstamp -> FALSE\n");
     /* Check if packet timestamp is too far in the future.
      * Try first if our cached value, to avoid ktime_get_ns()
      * cost in most cases.
@@ -602,7 +694,12 @@ static int fq_enqueue(struct sk_buff *skb, struct Qdisc *sch,
     fq_skb_cb(skb)->time_to_send = skb->tstamp;
   }
 
+  printf("* BEFORE: fq_classify\n");
   f = fq_classify(skb, q);
+  printf("\n");
+
+  printf("f->sk->sk_hash: %u\n", f->sk->sk_hash);
+  printf("f->socket_hash: %u\n", f->socket_hash);
   // if (unlikely(f->qlen >= q->flow_plimit && f != &q->internal))
   // {
   //   q->stat_flows_plimit++;
@@ -611,14 +708,14 @@ static int fq_enqueue(struct sk_buff *skb, struct Qdisc *sch,
 
   f->qlen++;
   // qdisc_qstats_backlog_inc(sch, skb);
-  // if (fq_flow_is_detached(f))
-  // {
-  //   fq_flow_add_tail(&q->new_flows, f);
+  if (fq_flow_is_detached(f))
+  {
+    fq_flow_add_tail(&q->new_flows, f);
 
-  //   if (time_after(jiffies, f->age + q->flow_refill_delay))
-  //     f->credit = max_t(u32, f->credit, q->quantum);
-  //   q->inactive_flows--;
-  // }
+    if (time_after(100, f->age + q->flow_refill_delay))
+      f->credit = max_t(u32, f->credit, q->quantum);
+    q->inactive_flows--;
+  }
 
   /* Note: this overwrites f->age */
 
@@ -631,6 +728,8 @@ static int fq_enqueue(struct sk_buff *skb, struct Qdisc *sch,
   // * fq_classify identifies the flow itself
   // * flow_queue_add identifies which flow the packet belongs to
   flow_queue_add(f, skb);
+
+  printf("\n* BEFORE: coflow logic\n");
 
   /*
      setting the barrier bits

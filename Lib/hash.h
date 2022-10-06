@@ -3,24 +3,27 @@
 /* Fast hashing routine for ints,  longs and pointers.
    (C) 2002 Nadia Yvette Chambers, IBM */
 
-// #include <asm/types.h>
+#include <asm/types.h>
 #include "./compiler.h"
 
-#include <stdint.h>
-typedef uint32_t u32;
-typedef uint64_t u64;
+// * HEON: added
+#include "../Test/temp_types.h"
+#define BITS_PER_LONG 64
 
 /*
  * The "GOLDEN_RATIO_PRIME" is used in ifs/btrfs/brtfs_inode.h and
  * fs/inode.c.  It's not actually prime any more (the previous primes
  * were actively bad for hashing), but the name remains.
  */
-#define hash_long(val, bits) hash_32(val, bits)
+#if BITS_PER_LONG == 32
 #define GOLDEN_RATIO_PRIME GOLDEN_RATIO_32
-
-// #define hash_long(val, bits) hash_64(val, bits)
-// #define GOLDEN_RATIO_PRIME GOLDEN_RATIO_64
-
+#define hash_long(val, bits) hash_32(val, bits)
+#elif BITS_PER_LONG == 64
+#define hash_long(val, bits) hash_64(val, bits)
+#define GOLDEN_RATIO_PRIME GOLDEN_RATIO_64
+#else
+#error Wordsize not 32 or 64
+#endif
 
 /*
  * This hash multiplies the input by a large odd number and takes the
@@ -44,7 +47,7 @@ typedef uint64_t u64;
 
 #ifdef CONFIG_HAVE_ARCH_HASH
 /* This header may use the GOLDEN_RATIO_xx constants */
-// #include <asm/hash.h>
+#include <asm/hash.h>
 #endif
 
 /*
@@ -72,7 +75,7 @@ static inline u32 hash_32(u32 val, unsigned int bits)
 #ifndef HAVE_ARCH_HASH_64
 #define hash_64 hash_64_generic
 #endif
-static inline u32 hash_64_generic(u64 val, unsigned int bits)
+static __always_inline u32 hash_64_generic(u64 val, unsigned int bits)
 {
 #if BITS_PER_LONG == 64
   /* 64x64-bit multiply is efficient on all 64-bit processors */
@@ -86,6 +89,17 @@ static inline u32 hash_64_generic(u64 val, unsigned int bits)
 static inline u32 hash_ptr(const void *ptr, unsigned int bits)
 {
   return hash_long((unsigned long)ptr, bits);
+}
+
+/* This really should be called fold32_ptr; it does no hashing to speak of. */
+static inline u32 hash32_ptr(const void *ptr)
+{
+  unsigned long val = (unsigned long)ptr;
+
+#if BITS_PER_LONG == 64
+  val ^= (val >> 32);
+#endif
+  return (u32)val;
 }
 
 #endif /* _LINUX_HASH_H */

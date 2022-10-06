@@ -1,0 +1,8 @@
+A LOT OF ERRORS:
+- very hard to track down what's the issue
+- logic is very hard
+- SO MANY MISSING FUNCTIONS, LIBS, ETC.
+- most importantly, I am not able to follow a huge portion of it.
+
+- can I just write a very simple library that mimics the entire lifecycle of a scheduler? 
+

@@ -1,6 +1,6 @@
 /**
-WIP: This is the main file that I am working on
-*/
+ * WIP: This is the main file that I am working on
+ */
 
 #include <assert.h>
 #include <stdlib.h>
@@ -8,7 +8,7 @@ WIP: This is the main file that I am working on
 
 // Used for enabling logs
 #define DEBUG 0
-char log[100] = {'\0'};
+char debugLog[100] = {'\0'};
 
 // Colors
 #define KNRM "\x1B[0m"
@@ -67,7 +67,7 @@ void logMessage()
 {
   if (DEBUG)
   {
-    printf("%s", log);
+    printf("%s", debugLog);
   }
 }
 
