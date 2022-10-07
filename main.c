@@ -204,18 +204,21 @@ void Test_fq_enqueue()
   struct sock *sk_dummy1 = malloc(sizeof(struct sock));
   sk_dummy1->sk_hash = 3;
   skb1->sk = sk_dummy1;
+  skb1->tstamp = 3;
 
   // dummy packet 2
-  struct sk_buff *skb2 = (struct sk_buff *)malloc(sizeof(struct sk_buff));
-  struct sock *sk_dummy2 = malloc(sizeof(struct sock));
-  sk_dummy2->sk_hash = 4;
-  skb2->sk = sk_dummy2;
+  // struct sk_buff *skb2 = (struct sk_buff *)malloc(sizeof(struct sk_buff));
+  // struct sock *sk_dummy2 = malloc(sizeof(struct sock));
+  // sk_dummy2->sk_hash = 4;
+  // skb2->sk = sk_dummy2;
+  // skb2->tstamp = 4;
 
   // dummy packet 3
   struct sk_buff *skb3 = (struct sk_buff *)malloc(sizeof(struct sk_buff));
   struct sock *sk_dummy3 = malloc(sizeof(struct sock));
   sk_dummy3->sk_hash = 3;
   skb3->sk = sk_dummy3;
+  skb3->tstamp = 5;
 
   struct Qdisc *sch = (struct Qdisc *)malloc(sizeof(struct Qdisc));
 
@@ -225,7 +228,7 @@ void Test_fq_enqueue()
 
   // ENQUEUE
   fq_enqueue(q, skb1, sch, &to_free);
-  fq_enqueue(q, skb2, sch, &to_free);
+  // fq_enqueue(q, skb2, sch, &to_free);
   fq_enqueue(q, skb3, sch, &to_free);
 
   printf("* AFTER fq_enqueue\n");

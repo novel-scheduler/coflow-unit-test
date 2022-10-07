@@ -495,8 +495,16 @@ static struct fq_flow *fq_classify(struct sk_buff *skb,
   // }
   // * HEON:NOTE: the commented code above has to be checked later
 
+  // * HEON:NOTE: two different flows cannot have the same sk value.
+  // * HEON:NOTE: a hash table is being used, which bases its key on the sk value for unique identification - the value of the hash keys are not individual flows, but an rb_tree of flows
   printf("* BEFORE: getting root\n");
-  root = &q->fq_root[hash_ptr(sk, q->fq_trees_log)];
+
+  // root = &q->fq_root[hash_ptr(sk, q->fq_trees_log)];
+  printf("sk->sk_hash: %u\n", sk->sk_hash);
+  printf("q->fq_trees_log: %u\n", q->fq_trees_log);
+  printf("hash operation result: %u\n", sk->sk_hash % q->fq_trees_log);
+  root = &q->fq_root[sk->sk_hash % q->fq_trees_log];
+
   if (root == NULL)
   {
     printf("ERROR: root is NOT initialized\n");
@@ -510,7 +518,7 @@ static struct fq_flow *fq_classify(struct sk_buff *skb,
   printf("p != NULL: %d\n", p != NULL);
 
   // ! *p is failing
-  printf("*p != NULL: %d\n", *p != NULL);
+  // printf("*p != NULL: %d\n", *p != NULL);
   // printf("rb color: %u\n", (*p)->__rb_parent_color);
 
   parent = NULL;
@@ -724,8 +732,9 @@ static struct fq_sched_data *fq_init()
   q->delayed = RB_ROOT;
 
   // ? HEON:Q: is this malloc correct? fq_root seems to be used as an array for multiple rb trees (just like a string containing characters). Should we initialize using the array notation instead of malloc?
-  q->fq_root = malloc(sizeof(struct rb_root));
+  q->fq_root = malloc(sizeof(struct rb_root) * 10);
 
+  // * HEON:NOTE: fq_trees_logs == the number of buckets in the hash, basically the number of rbtrees
   q->fq_trees_log = log2(1024);
   q->orphan_mask = 1024 - 1;
   q->low_rate_threshold = 550000 / 8;
