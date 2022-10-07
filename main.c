@@ -199,10 +199,23 @@ void Test_fq_flow_add_tail()
 
 void Test_fq_enqueue()
 {
-  struct sk_buff *skb = (struct sk_buff *)malloc(sizeof(struct sk_buff));
-  struct sock *sk_dummy = malloc(sizeof(struct sock));
-  sk_dummy->sk_hash = 3;
-  skb->sk = sk_dummy;
+  // dummy packet 1
+  struct sk_buff *skb1 = (struct sk_buff *)malloc(sizeof(struct sk_buff));
+  struct sock *sk_dummy1 = malloc(sizeof(struct sock));
+  sk_dummy1->sk_hash = 3;
+  skb1->sk = sk_dummy1;
+
+  // dummy packet 2
+  struct sk_buff *skb2 = (struct sk_buff *)malloc(sizeof(struct sk_buff));
+  struct sock *sk_dummy2 = malloc(sizeof(struct sock));
+  sk_dummy2->sk_hash = 4;
+  skb2->sk = sk_dummy2;
+
+  // dummy packet 3
+  struct sk_buff *skb3 = (struct sk_buff *)malloc(sizeof(struct sk_buff));
+  struct sock *sk_dummy3 = malloc(sizeof(struct sock));
+  sk_dummy3->sk_hash = 3;
+  skb3->sk = sk_dummy3;
 
   struct Qdisc *sch = (struct Qdisc *)malloc(sizeof(struct Qdisc));
 
@@ -210,13 +223,21 @@ void Test_fq_enqueue()
 
   struct fq_sched_data *q = fq_init();
 
-  fq_enqueue(q, skb, sch, &to_free);
+  // ENQUEUE
+  fq_enqueue(q, skb1, sch, &to_free);
+  fq_enqueue(q, skb2, sch, &to_free);
+  fq_enqueue(q, skb3, sch, &to_free);
+
   printf("* AFTER fq_enqueue\n");
 
   printf("\nAFTER enqueue\n");
 
-  printf("skb->rb_node color: %u\n", skb->rbnode.__rb_parent_color);
-  printf("new flows list: %d\n", q->new_flows.first != NULL);
+  // printf("skb->rb_node color: %u\n", skb->rbnode.__rb_parent_color);
+  printf("new flows list: first exists: %d\n", q->new_flows.first != NULL);
+  printf("new flows list: first flow: socket_hash: %u\n", q->new_flows.first->socket_hash);
+  printf("new flows list: second exists: %d\n", q->new_flows.first->next != NULL);
+  printf("new flows list: second flow: socket_hash: %u\n", q->new_flows.first->next->socket_hash);
+
   printf("old flows list: %d\n", q->old_flows.first != NULL);
   printf("co flows list: %d\n", q->co_flows.first != NULL);
 }

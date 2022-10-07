@@ -77,6 +77,8 @@ static inline u32 hash_32(u32 val, unsigned int bits)
 #endif
 static __always_inline u32 hash_64_generic(u64 val, unsigned int bits)
 {
+  // * HEON:NOTE - this is the final location starting from the hash_ptr() func.
+
 #if BITS_PER_LONG == 64
   /* 64x64-bit multiply is efficient on all 64-bit processors */
   return val * GOLDEN_RATIO_64 >> (64 - bits);

@@ -6,6 +6,27 @@
 #include "./temp_types.h"
 #include "../Lib/rbtree.c"
 
+#ifndef max
+#define max(x, y) ({				\
+	typeof(x) _max1 = (x);			\
+	typeof(y) _max2 = (y);			\
+	(void) (&_max1 == &_max2);		\
+	_max1 > _max2 ? _max1 : _max2; })
+#endif
+
+#ifndef min
+#define min(x, y) ({				\
+	typeof(x) _min1 = (x);			\
+	typeof(y) _min2 = (y);			\
+	(void) (&_min1 == &_min2);		\
+	_min1 < _min2 ? _min1 : _min2; })
+#endif
+
+#define max_t(type, x, y) max((type)x, (type)y)
+
+#define time_after(a, b) \
+  (((long)((b) - (a)) < 0))
+
 typedef s64 ktime_t;
 
 typedef unsigned int __u32;
@@ -187,6 +208,52 @@ struct fq_sched_data
   struct qdisc_watchdog watchdog;
 };
 
+int height(struct rb_node *node)
+{
+  if (node == NULL)
+    return 0;
+  else
+  {
+    /* compute the height of each subtree */
+    int lheight = height(node->rb_left);
+    int rheight = height(node->rb_right);
+    /* use the larger one */
+    if (lheight > rheight)
+    {
+      return (lheight + 1);
+    }
+    else
+    {
+      return (rheight + 1);
+    }
+  }
+}
+
+void printCurrentLevel(struct rb_node *root, int level)
+{
+  if (root == NULL)
+    return;
+  if (level == 1)
+  {
+    // cout << root->data << " ";
+    printf(" ");
+    printf("");
+  }
+  else if (level > 1)
+  {
+    printCurrentLevel(root->rb_left, level - 1);
+    printCurrentLevel(root->rb_right, level - 1);
+  }
+}
+
+void printLevelOrder(struct rb_node *root_node)
+{
+  int h = height(root_node);
+  int i;
+  for (i = 1; i <= h; i++)
+    printCurrentLevel(root_node, i);
+}
+
 int valuePresentInArray(unsigned val, unsigned arr[], int lengthOfarray)
 {
   printf("value to be searched is %u\n", val);
@@ -366,10 +433,17 @@ static struct fq_flow *fq_classify(struct sk_buff *skb,
 {
   printf("\n* FUNC: fq_classify\n");
 
-  struct rb_node **p, *parent;
+  // struct rb_node **p, *parent;
+  // struct sock *sk = skb->sk;
+  // struct rb_root *root;
+  // struct fq_flow *f;
+
+  // * HEON:NOTE avoiding garbage values
+  struct rb_node **p = NULL;
+  struct rb_node *parent = NULL;
   struct sock *sk = skb->sk;
-  struct rb_root *root;
-  struct fq_flow *f;
+  struct rb_root *root = NULL;
+  struct fq_flow *f = NULL;
 
   printf("sk->hash IN:fq_classify: %u\n", sk->sk_hash);
 
@@ -419,6 +493,7 @@ static struct fq_flow *fq_classify(struct sk_buff *skb,
   //    */
   //   sk = (struct sock *)((hash << 1) | 1UL);
   // }
+  // * HEON:NOTE: the commented code above has to be checked later
 
   printf("* BEFORE: getting root\n");
   root = &q->fq_root[hash_ptr(sk, q->fq_trees_log)];
@@ -427,6 +502,7 @@ static struct fq_flow *fq_classify(struct sk_buff *skb,
     printf("ERROR: root is NOT initialized\n");
   }
 
+  // * HEON:NOTE: checking for maximum number of allowed flows -> not needed
   // if (q->flows >= (2U << q->fq_trees_log) && q->inactive_flows > q->flows / 2)
   //   fq_gc(q, root, sk);
 
@@ -438,6 +514,16 @@ static struct fq_flow *fq_classify(struct sk_buff *skb,
   // printf("rb color: %u\n", (*p)->__rb_parent_color);
 
   parent = NULL;
+
+  // * HEON:ADD - traverse rb_tree
+  printf("\n*** RBTREE CUSTOM TRAVERSAL ***\n");
+  printf("root != NULL: 1\n");
+  // struct rb_node *ptr = (struct rb_node *)root->rb_node;
+  f = rb_entry(parent, struct fq_flow, fq_node);
+  printf("f != NULL: %d\n", f != NULL);
+  // printf("tree-trav: f->socket_hash: %u\n", f->socket_hash);
+  printf("*** END OF TRAV ***\n\n");
+
   printf("* BEFORE: loop\n");
   while (*p)
   {
@@ -531,7 +617,7 @@ static struct fq_flow *fq_classify(struct sk_buff *skb,
   // }
   /* f->t_root is already zeroed after kmem_cache_zalloc() */
 
-  // fq_flow_set_detached(f);
+  fq_flow_set_detached(f);
   f->sk = sk;
   if (skb->sk == sk)
   {
@@ -636,8 +722,10 @@ static struct fq_sched_data *fq_init()
   q->co_flows.first = NULL;
 
   q->delayed = RB_ROOT;
+
+  // ? HEON:Q: is this malloc correct? fq_root seems to be used as an array for multiple rb trees (just like a string containing characters). Should we initialize using the array notation instead of malloc?
   q->fq_root = malloc(sizeof(struct rb_root));
-  // q->fq_root->rb_node = malloc(sizeof(struct rb_node));
+
   q->fq_trees_log = log2(1024);
   q->orphan_mask = 1024 - 1;
   q->low_rate_threshold = 550000 / 8;
@@ -730,6 +818,10 @@ static int fq_enqueue(struct fq_sched_data *q, struct sk_buff *skb, struct Qdisc
   flow_queue_add(f, skb);
 
   printf("\n* BEFORE: coflow logic\n");
+
+  printf("q->new_flows.first->credit: %d\n", q->new_flows.first->credit);
+  printf("q->new_flows.first->age: %u\n", q->new_flows.first->age);
+  printf("q->new_flows.first->socket_hash: %u\n", q->new_flows.first->socket_hash);
 
   /*
      setting the barrier bits
