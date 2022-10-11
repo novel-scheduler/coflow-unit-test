@@ -302,38 +302,97 @@ void Test2_fq_enqueue()
   - 4 total flows in new flows list (LL)
   */
 
-  // dummy packet 1
-  struct sk_buff *skb1 = (struct sk_buff *)malloc(sizeof(struct sk_buff));
-  struct sock *sk_dummy1 = malloc(sizeof(struct sock));
-  sk_dummy1->sk_hash = 3;
-  skb1->sk = sk_dummy1;
-  skb1->tstamp = 3;
+  // * flow F
+  // socket of flow
+  struct sock *sk_f = malloc(sizeof(struct sock));
+  sk_f->sk_hash = 3;
 
-  // dummy packet 2
-  struct sk_buff *skb2 = (struct sk_buff *)malloc(sizeof(struct sk_buff));
-  struct sock *sk_dummy2 = malloc(sizeof(struct sock));
-  sk_dummy2->sk_hash = 3;
-  skb2->sk = sk_dummy2;
-  skb2->tstamp = 4;
+  // first & second packet
+  struct sk_buff *skb_f_1 = (struct sk_buff *)malloc(sizeof(struct sk_buff));
+  struct sk_buff *skb_f_2 = (struct sk_buff *)malloc(sizeof(struct sk_buff));
 
-  // dummy packet 3
-  struct sk_buff *skb3 = (struct sk_buff *)malloc(sizeof(struct sk_buff));
-  struct sock *sk_dummy3 = malloc(sizeof(struct sock));
-  skb3->sk = sk_dummy1;
-  skb3->tstamp = 5;
+  skb_f_1->sk = sk_f;
+  skb_f_1->tstamp = 1;
+  skb_f_2->sk = sk_f;
+  skb_f_2->tstamp = 4;
 
+  // * flow G
+  // socket of flow
+  struct sock *sk_g = malloc(sizeof(struct sock));
+  sk_g->sk_hash = 3;
+
+  // first & second packet
+  struct sk_buff *skb_g_1 = (struct sk_buff *)malloc(sizeof(struct sk_buff));
+
+  skb_g_1->sk = sk_g;
+  skb_g_1->tstamp = 2;
+
+  // * flow H
+  // socket of flow
+  struct sock *sk_h = malloc(sizeof(struct sock));
+  sk_h->sk_hash = 3;
+
+  // first & second packet
+  struct sk_buff *skb_h_1 = (struct sk_buff *)malloc(sizeof(struct sk_buff));
+  struct sk_buff *skb_h_2 = (struct sk_buff *)malloc(sizeof(struct sk_buff));
+
+  skb_h_1->sk = sk_h;
+  skb_h_1->tstamp = 3;
+  skb_h_2->sk = sk_h;
+  skb_h_2->tstamp = 5;
+
+  // * flow K
+  // socket of flow
+  struct sock *sk_k = malloc(sizeof(struct sock));
+  sk_k->sk_hash = 5;
+
+  // first & second packet
+  struct sk_buff *skb_k_1 = (struct sk_buff *)malloc(sizeof(struct sk_buff));
+
+  skb_k_1->sk = sk_k;
+  skb_k_1->tstamp = 6;
+
+  // initial config
   struct Qdisc *sch = (struct Qdisc *)malloc(sizeof(struct Qdisc));
 
   struct sk_buff *to_free = (struct sk_buff *)malloc(sizeof(struct sk_buff));
 
   struct fq_sched_data *q = fq_init();
 
-  // ENQUEUE
-  fq_enqueue(q, skb1, sch, &to_free);
-  fq_enqueue(q, skb2, sch, &to_free);
-  fq_enqueue(q, skb3, sch, &to_free);
+  // * ENQUEUE
+  // enqueue them in the order of the tstamps
+  fq_enqueue(q, skb_f_1, sch, &to_free);
+  fq_enqueue(q, skb_g_1, sch, &to_free);
+  fq_enqueue(q, skb_h_1, sch, &to_free);
+  fq_enqueue(q, skb_f_2, sch, &to_free);
+  fq_enqueue(q, skb_h_2, sch, &to_free);
+  fq_enqueue(q, skb_k_1, sch, &to_free);
 
   printf("\n----- AFTER Enqueue -----\n\n");
+
+  // Check New Flows List Content
+  struct fq_flow *firstFlow = q->new_flows.first;
+  printf("NFL: first flow: socket_hash => %u | tstamp => %ld\n", firstFlow->socket_hash, firstFlow->head->tstamp);
+
+  struct fq_flow *secondFlow = q->new_flows.first->next;
+  printf("NFL: second flow: socket_hash => %u | tstamp => %ld\n", secondFlow->socket_hash, secondFlow->head->tstamp);
+
+  struct fq_flow *thirdFlow = q->new_flows.first->next->next;
+  printf("NFL: third flow: socket_hash => %u | tstamp => %ld\n", thirdFlow->socket_hash, thirdFlow->head->tstamp);
+
+  struct fq_flow *fourthFlow = q->new_flows.first->next->next->next;
+  printf("NFL: fourth flow: socket_hash => %u | tstamp => %ld\n", fourthFlow->socket_hash, fourthFlow->head->tstamp);
+
+  printf("\nNFL: fifth flow: exists => %d\n", q->new_flows.first->next->next->next->next != NULL);
+
+  // Check Packet LL for each flow with more than single packet (F & H)
+  // Flow F
+  printf("\nNFL: flow F: first packet: tstamp => %ld\n", firstFlow->head->tstamp);
+  printf("NFL: flow F: second packet: tstamp => %ld\n", firstFlow->head->next->tstamp);
+
+  // Flow H
+  printf("\nNFL: flow H: first packet: tstamp => %ld\n", thirdFlow->head->tstamp);
+  printf("NFL: flow H: second packet: tstamp => %ld\n", thirdFlow->head->next->tstamp);
 }
 
 /**
@@ -361,8 +420,12 @@ int main()
   // Test_Promotecoflows();
   // after();
 
-  before("Test_fq_enqueue");
-  Test_fq_enqueue();
+  // before("Test_fq_enqueue");
+  // Test_fq_enqueue();
+  // after();
+
+  before("Test2_fq_enqueue");
+  Test2_fq_enqueue();
   after();
 
   printTestingSessionResult();
