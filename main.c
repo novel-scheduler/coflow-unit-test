@@ -207,17 +207,16 @@ void Test_fq_enqueue()
   skb1->tstamp = 3;
 
   // dummy packet 2
-  // struct sk_buff *skb2 = (struct sk_buff *)malloc(sizeof(struct sk_buff));
-  // struct sock *sk_dummy2 = malloc(sizeof(struct sock));
-  // sk_dummy2->sk_hash = 4;
-  // skb2->sk = sk_dummy2;
-  // skb2->tstamp = 4;
+  struct sk_buff *skb2 = (struct sk_buff *)malloc(sizeof(struct sk_buff));
+  struct sock *sk_dummy2 = malloc(sizeof(struct sock));
+  sk_dummy2->sk_hash = 3; // same hash to target same rbtree as dummy packet 1 & 3
+  skb2->sk = sk_dummy2;
+  skb2->tstamp = 4;
 
   // dummy packet 3
   struct sk_buff *skb3 = (struct sk_buff *)malloc(sizeof(struct sk_buff));
   struct sock *sk_dummy3 = malloc(sizeof(struct sock));
-  sk_dummy3->sk_hash = 3;
-  skb3->sk = sk_dummy3;
+  skb3->sk = sk_dummy1; // same sock, meaning packet sbk3 is in the same flow as skb1
   skb3->tstamp = 5;
 
   struct Qdisc *sch = (struct Qdisc *)malloc(sizeof(struct Qdisc));
@@ -228,21 +227,113 @@ void Test_fq_enqueue()
 
   // ENQUEUE
   fq_enqueue(q, skb1, sch, &to_free);
-  // fq_enqueue(q, skb2, sch, &to_free);
+  fq_enqueue(q, skb2, sch, &to_free);
   fq_enqueue(q, skb3, sch, &to_free);
 
   printf("* AFTER fq_enqueue\n");
 
-  printf("\nAFTER enqueue\n");
+  printf("\n----- AFTER Enqueue -----\n\n");
 
   // printf("skb->rb_node color: %u\n", skb->rbnode.__rb_parent_color);
   printf("new flows list: first exists: %d\n", q->new_flows.first != NULL);
   printf("new flows list: first flow: socket_hash: %u\n", q->new_flows.first->socket_hash);
-  printf("new flows list: second exists: %d\n", q->new_flows.first->next != NULL);
-  printf("new flows list: second flow: socket_hash: %u\n", q->new_flows.first->next->socket_hash);
+  printf("first flow - first pkt tstamp: %d\n", q->new_flows.first->head->tstamp);
+  printf("first flow - second pkt tstamp: %d\n", q->new_flows.first->head->next->tstamp);
+  // * the above shows that pkts in same flow gets to the same per-flow queue (LL) and the later pkt gets appended to the sk_buff LL of the flow. (as can be seen in tstamp)
+  // * since dummy pkts 1 & 3 belong to the same flow, there will only be a single addition to the new flows LL.(if you process dummy pkt 2, there will be two flows in the new flows LL at the end)
 
-  printf("old flows list: %d\n", q->old_flows.first != NULL);
-  printf("co flows list: %d\n", q->co_flows.first != NULL);
+  printf("\nnew flows list: second exists: %d\n", q->new_flows.first->next != NULL);
+  printf("new flows list: second flow: socket_hash: %u\n", q->new_flows.first->next->socket_hash);
+  printf("second flow - first pkt tstamp: %d\n", q->new_flows.first->next->head->tstamp);
+
+  // printf("old flows list: %d\n", q->old_flows.first != NULL);
+  // printf("co flows list: %d\n", q->co_flows.first != NULL);
+
+  struct rb_root *root = &q->fq_root[3];
+  struct rb_node **p = &root->rb_node;
+  struct fq_flow *f = rb_entry(*p, struct fq_flow, fq_node);
+  printf("\nroot flow in fq_root[3]: sk_hash: %u\n", f->sk->sk_hash);
+}
+
+void Test2_fq_enqueue()
+{
+  /*
+  <scenario>: (6 total pkts)
+  flow f, g, h, k
+  f: 2 packets: [
+    {
+      sk_hash: 3,
+      tstamp: 1,
+    },
+    {
+      sk_hash: 3,
+      tstamp: 4,
+    }
+  ]
+  g: 1 packet: [
+    {
+      sk_hash: 3,
+      tstamp: 2,
+    }
+  ]
+  h: 2 packets: [
+    {
+      sk_hash: 3,
+      tstamp: 3,
+    },
+    {
+      sk_hash: 3,
+      tstamp: 5,
+    }
+  ]
+  k: 1 packet: [
+    {
+      sk_hash: 5,
+      tstamp: 6,
+    }
+  ]
+
+  <purpose>:
+  - testing fq_enqueue() where 3 flows (f, g, h) are in the same bucket of hash 3, and 1 flow (k) in another bucket of hash 5
+
+  <expected result>:
+  - 3 rb_nodes in rbtree in bucket of hash 3
+  - 1 rb_node in rbtree in bucket of hash 5
+  - 4 total flows in new flows list (LL)
+  */
+
+  // dummy packet 1
+  struct sk_buff *skb1 = (struct sk_buff *)malloc(sizeof(struct sk_buff));
+  struct sock *sk_dummy1 = malloc(sizeof(struct sock));
+  sk_dummy1->sk_hash = 3;
+  skb1->sk = sk_dummy1;
+  skb1->tstamp = 3;
+
+  // dummy packet 2
+  struct sk_buff *skb2 = (struct sk_buff *)malloc(sizeof(struct sk_buff));
+  struct sock *sk_dummy2 = malloc(sizeof(struct sock));
+  sk_dummy2->sk_hash = 3;
+  skb2->sk = sk_dummy2;
+  skb2->tstamp = 4;
+
+  // dummy packet 3
+  struct sk_buff *skb3 = (struct sk_buff *)malloc(sizeof(struct sk_buff));
+  struct sock *sk_dummy3 = malloc(sizeof(struct sock));
+  skb3->sk = sk_dummy1;
+  skb3->tstamp = 5;
+
+  struct Qdisc *sch = (struct Qdisc *)malloc(sizeof(struct Qdisc));
+
+  struct sk_buff *to_free = (struct sk_buff *)malloc(sizeof(struct sk_buff));
+
+  struct fq_sched_data *q = fq_init();
+
+  // ENQUEUE
+  fq_enqueue(q, skb1, sch, &to_free);
+  fq_enqueue(q, skb2, sch, &to_free);
+  fq_enqueue(q, skb3, sch, &to_free);
+
+  printf("\n----- AFTER Enqueue -----\n\n");
 }
 
 /**

@@ -446,6 +446,7 @@ static struct fq_flow *fq_classify(struct sk_buff *skb,
   struct fq_flow *f = NULL;
 
   printf("sk->hash IN:fq_classify: %u\n", sk->sk_hash);
+  printf("skb->tstmp: %d\n", skb->tstamp);
 
   // printk("In add values address pair is  : %lld \n ", sk->sk_portpair);
   // printk("In add values destination port is  : %lld \n ", sk->sk_dport);
@@ -524,13 +525,13 @@ static struct fq_flow *fq_classify(struct sk_buff *skb,
   parent = NULL;
 
   // * HEON:ADD - traverse rb_tree
-  printf("\n*** RBTREE CUSTOM TRAVERSAL ***\n");
-  printf("root != NULL: 1\n");
+  // printf("\n*** RBTREE CUSTOM TRAVERSAL ***\n");
+  // printf("root != NULL: 1\n");
   // struct rb_node *ptr = (struct rb_node *)root->rb_node;
-  f = rb_entry(parent, struct fq_flow, fq_node);
-  printf("f != NULL: %d\n", f != NULL);
+  // f = rb_entry(parent, struct fq_flow, fq_node);
+  // printf("f != NULL: %d\n", f != NULL);
   // printf("tree-trav: f->socket_hash: %u\n", f->socket_hash);
-  printf("*** END OF TRAV ***\n\n");
+  // printf("*** END OF TRAV ***\n\n");
 
   printf("* BEFORE: loop\n");
   while (*p)
@@ -540,6 +541,7 @@ static struct fq_flow *fq_classify(struct sk_buff *skb,
 
     // !!!!! Don't know why it's an ERROR !!!!!
     f = rb_entry(parent, struct fq_flow, fq_node);
+    printf("** LOOP - f->sk->sk_hash: %u\n", f->sk->sk_hash);
     if (f->sk == sk)
     {
       printf("*** MATCH!\n");
@@ -732,7 +734,9 @@ static struct fq_sched_data *fq_init()
   q->delayed = RB_ROOT;
 
   // ? HEON:Q: is this malloc correct? fq_root seems to be used as an array for multiple rb trees (just like a string containing characters). Should we initialize using the array notation instead of malloc?
+  // ? https://stackoverflow.com/questions/10468128/how-do-you-make-an-array-of-structs-in-c
   q->fq_root = malloc(sizeof(struct rb_root) * 10);
+  // q->fq_root[10];
 
   // * HEON:NOTE: fq_trees_logs == the number of buckets in the hash, basically the number of rbtrees
   q->fq_trees_log = log2(1024);
@@ -740,6 +744,213 @@ static struct fq_sched_data *fq_init()
   q->low_rate_threshold = 550000 / 8;
 
   return q;
+}
+
+// TODO:
+static struct sk_buff *fq_dequeue(struct Qdisc *sch)
+{
+  struct fq_sched_data *q = qdisc_priv(sch);
+  struct fq_flow_head *head;
+  struct sk_buff *skb;
+  struct fq_flow *f, *coflow;
+  unsigned long rate;
+  int dcounter = 0;
+  int coflowcounter = 0;
+  u32 plen;
+  u64 now;
+  int lengthOfarray = 0;
+  int i;
+  int prevarray[2];
+  int flag[2] = {0, 0};
+
+  for (i = 0; i < (sizeof(pFlowid) / sizeof(pFlowid[0])); i++)
+  {
+    lengthOfarray++;
+  }
+
+  for (i = 0; i < lengthOfarray; i++)
+  {
+    prevarray[i] = -1;
+  }
+
+  if (!sch->q.qlen)
+    return NULL;
+
+  skb = fq_peek(&q->internal);
+  if (unlikely(skb))
+  {
+    fq_dequeue_skb(sch, &q->internal, skb);
+    goto out;
+  }
+
+  q->ktime_cache = now = ktime_get_ns();
+  fq_check_throttled(q, now);
+
+  /*dequeuing using barrier process*/
+
+begin:
+  head = &q->co_flows;
+  // printk("adding In co-flow \n");
+  if (!head->first)
+  {
+    head = &q->new_flows;
+    if (!head->first)
+    {
+      head = &q->old_flows;
+      if (!head->first)
+      {
+        if (q->time_next_delayed_flow != ~0ULL)
+          qdisc_watchdog_schedule_range_ns(
+              &q->watchdog, q->time_next_delayed_flow, q->timer_slack);
+        return NULL;
+      }
+    }
+  }
+
+  f = head->first;
+
+  int rValue = valuePresentInArray(f->socket_hash, pFlowid, lengthOfarray);
+
+  if (rValue != -1)
+  {
+
+    if (flag[rValue] == 0)
+    {
+
+      coflowcounter++;
+      flag[rValue] = 1;
+    }
+  }
+
+  /*if (rValue != -1)
+  {
+    coflowcounter++;
+  }*/
+
+  // printk("rValue is   : %d \n ", rValue);
+
+  // printk("barrier value  : %d \n ", barrier[dcounter]);
+
+  // Breach and membership of the flow is checked once it is satisfied all the
+  // flows are added to co-flow set at once
+  if ((rValue != -1) && (barrier[dcounter] == 3))
+  {
+    printk("Breach Occured \n");
+    barrier[dcounter] = 0;
+    head->first = f->next;
+    printk("adding all co-flows together \n");
+    Promotecoflows(&q->old_flows, &q->new_flows, &q->co_flows, f, coflow,
+                   pFlowid, lengthOfarray);
+  }
+
+  if (!barrier[dcounter] && (coflowcounter == lengthOfarray))
+  {
+    dcounter++;
+    coflowcounter = 0;
+  }
+
+  /*demotion is defualt and we need not use any specific function because of how
+   * the flows are added to old flows if 	cedit is not enough to send the
+   * packets*/
+
+  if (f->credit <= 0)
+  {
+    f->credit += q->quantum;
+    head->first = f->next;
+    fq_flow_add_tail(&q->old_flows, f);
+    goto begin;
+  }
+
+  skb = fq_peek(f);
+  if (skb)
+  {
+    u64 time_next_packet =
+        max_t(u64, fq_skb_cb(skb)->time_to_send, f->time_next_packet);
+
+    if (now < time_next_packet)
+    {
+      head->first = f->next;
+      f->time_next_packet = time_next_packet;
+      fq_flow_set_throttled(q, f);
+      goto begin;
+    }
+    prefetch(&skb->end);
+    if ((s64)(now - time_next_packet - q->ce_threshold) > 0)
+    {
+      INET_ECN_set_ce(skb);
+      q->stat_ce_mark++;
+    }
+    fq_dequeue_skb(sch, f, skb);
+  }
+  else
+  {
+    head->first = f->next;
+    /* force a pass through old_flows to prevent starvation */
+    if ((head == &q->new_flows) && q->old_flows.first)
+    {
+      fq_flow_add_tail(&q->old_flows, f);
+    }
+    else
+    {
+      fq_flow_set_detached(f);
+      q->inactive_flows++;
+    }
+    goto begin;
+  }
+  plen = qdisc_pkt_len(skb);
+  f->credit -= plen;
+
+  if (!q->rate_enable)
+    goto out;
+
+  rate = q->flow_max_rate;
+
+  /* If EDT time was provided for this skb, we need to
+   * update f->time_next_packet only if this qdisc enforces
+   * a flow max rate.
+   */
+  if (!skb->tstamp)
+  {
+    if (skb->sk)
+      rate = min(skb->sk->sk_pacing_rate, rate);
+
+    if (rate <= q->low_rate_threshold)
+    {
+      f->credit = 0;
+    }
+    else
+    {
+      plen = max(plen, q->quantum);
+      if (f->credit > 0)
+        goto out;
+    }
+  }
+  if (rate != ~0UL)
+  {
+    u64 len = (u64)plen * NSEC_PER_SEC;
+
+    if (likely(rate))
+      len = div64_ul(len, rate);
+    /* Since socket rate can change later,
+     * clamp the delay to 1 second.
+     * Really, providers of too big packets should be fixed !
+     */
+    if (unlikely(len > NSEC_PER_SEC))
+    {
+      len = NSEC_PER_SEC;
+      q->stat_pkts_too_long++;
+    }
+    /* Account for schedule/timers drifts.
+     * f->time_next_packet was set when prior packet was sent,
+     * and current time (@now) can be too late by tens of us.
+     */
+    if (f->time_next_packet)
+      len -= min(len / 2, now - f->time_next_packet);
+    f->time_next_packet = now + len;
+  }
+out:
+  qdisc_bstats_update(sch, skb);
+  return skb;
 }
 
 // * need a dummy skb & sch
