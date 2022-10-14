@@ -44,6 +44,7 @@ struct Qdisc
 struct sock
 {
   unsigned int sk_hash;
+  unsigned long sk_pacing_rate; /* bytes per second */
   // TODO: incomplete
 };
 
@@ -442,8 +443,7 @@ static bool fq_flow_is_detached(const struct fq_flow *f)
   return !!(f->age & 1UL);
 }
 
-static struct fq_flow *fq_classify(struct sk_buff *skb,
-                                   struct fq_sched_data *q)
+static struct fq_flow *fq_classify(struct sk_buff *skb, struct fq_sched_data *q)
 {
   printf("\n* FUNC: fq_classify\n");
 
@@ -778,6 +778,44 @@ static struct sk_buff *fq_peek(struct fq_flow *flow)
   return head;
 }
 
+static inline unsigned int qdisc_pkt_len(const struct sk_buff *skb)
+{
+  return qdisc_skb_cb(skb)->pkt_len;
+}
+
+// TODO:
+static void fq_erase_head(struct Qdisc *sch, struct fq_flow *flow, struct sk_buff *skb)
+{
+  if (skb == flow->head)
+  {
+    flow->head = skb->next;
+  }
+  else
+  {
+    rb_erase(&skb->rbnode, &flow->t_root);
+    skb->dev = qdisc_dev(sch);
+  }
+}
+
+// TODO:
+static inline void skb_mark_not_on_list(struct sk_buff *skb)
+{
+  skb->next = NULL;
+}
+
+// TODO:
+/* Remove one skb from flow queue.
+ * This skb must be the return value of prior fq_peek().
+ */
+static void fq_dequeue_skb(struct Qdisc *sch, struct fq_flow *flow, struct sk_buff *skb)
+{
+  fq_erase_head(sch, flow, skb);
+  skb_mark_not_on_list(skb);
+  flow->qlen--;
+  qdisc_qstats_backlog_dec(sch, skb);
+  sch->q.qlen--;
+}
+
 // TODO: not tested yet
 // * HEON:ADD - param: struct fq_sched_data *q
 static struct sk_buff *fq_dequeue(struct Qdisc *sch, struct fq_sched_data *q)
@@ -905,9 +943,11 @@ begin:
   // * gets leftmost (earliest time to send) sk_buff
   // ? fq_peek uses t_root of the flow -> if the t_root is the same thing as the rb_tree that contains multiple flows, then getting the leftmost of the tree means getting a possibly different flow than the one in fq_peek(f) -> does it make sense to process packets that are not from the current flow?
   // TODO:HEON
+  // * the haed sbk/pkt of the flow is the key for organizing flows in the rb_tree
   skb = fq_peek(f);
   if (skb)
   {
+    // * gets the farthest time to send -> if it is larger than current time (now), don't process packet
     u64 time_next_packet =
         max_t(u64, fq_skb_cb(skb)->time_to_send, f->time_next_packet);
 
@@ -915,19 +955,22 @@ begin:
     {
       head->first = f->next;
       f->time_next_packet = time_next_packet;
-      fq_flow_set_throttled(q, f);
+      // fq_flow_set_throttled(q, f);
       goto begin;
     }
-    prefetch(&skb->end);
-    if ((s64)(now - time_next_packet - q->ce_threshold) > 0)
-    {
-      INET_ECN_set_ce(skb);
-      q->stat_ce_mark++;
-    }
+
+    // * explicit congestion notification
+    // prefetch(&skb->end);
+    // if ((s64)(now - time_next_packet - q->ce_threshold) > 0)
+    // {
+    //   INET_ECN_set_ce(skb);
+    //   q->stat_ce_mark++;
+    // }
     fq_dequeue_skb(sch, f, skb);
   }
   else
   {
+    // * if there's no pkts to send for current flow, proceed to next flow
     head->first = f->next;
     /* force a pass through old_flows to prevent starvation */
     if ((head == &q->new_flows) && q->old_flows.first)
@@ -941,12 +984,15 @@ begin:
     }
     goto begin;
   }
+
   plen = qdisc_pkt_len(skb);
   f->credit -= plen;
 
-  if (!q->rate_enable)
-    goto out;
+  // * pacing
+  // if (!q->rate_enable)
+  //   goto out;
 
+  // TODO:HEON:POINTER
   rate = q->flow_max_rate;
 
   /* If EDT time was provided for this skb, we need to
