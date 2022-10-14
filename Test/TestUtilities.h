@@ -941,9 +941,9 @@ begin:
   }
 
   // * gets leftmost (earliest time to send) sk_buff
-  // ? fq_peek uses t_root of the flow -> if the t_root is the same thing as the rb_tree that contains multiple flows, then getting the leftmost of the tree means getting a possibly different flow than the one in fq_peek(f) -> does it make sense to process packets that are not from the current flow?
   // TODO:HEON
-  // * the haed sbk/pkt of the flow is the key for organizing flows in the rb_tree
+  // * the head sbk/pkt of the flow is the key for organizing flows in the rb_tree
+  // * we get the leftmost flow's head packet to run a max() to get the higher time to send
   skb = fq_peek(f);
   if (skb)
   {
