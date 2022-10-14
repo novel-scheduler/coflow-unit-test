@@ -256,6 +256,42 @@ int getFlowListLength(struct fq_flow *listHead)
   return listLength;
 }
 
+void printFlowsList(char *flowsListType, struct fq_flow *flowsListHead)
+{
+  struct fq_flow *ptr = flowsListHead;
+  int index = 1;
+
+  char *indentationWithVerticalLine = " |    ";
+  char *plainIndentation = "      ";
+
+  char *emptyLinewithVerticalLine = " |\n";
+  char *plainEmptyLine = "\n";
+
+  printf("\n*** Printing %s Flows List ***\n", flowsListType);
+  while (ptr != NULL)
+  {
+    char *indentation;
+    char *emptyLine;
+
+    if (ptr->next != NULL)
+    {
+      indentation = indentationWithVerticalLine;
+      emptyLine = emptyLinewithVerticalLine;
+    }
+    else
+    {
+      indentation = plainIndentation;
+      emptyLine = plainEmptyLine;
+    }
+
+    printf("[%d] Flow %s\n", index++, ptr->flowName);
+    printf("%s- socket_hash: %u\n", indentation, ptr->socket_hash);
+    printf("%s", emptyLine);
+    ptr = ptr->next;
+  }
+  printf("***************************\n\n");
+}
+
 // *** EXPECT TEST FUNCTIONS ***
 
 /**

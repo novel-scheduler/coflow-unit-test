@@ -393,6 +393,51 @@ void Test2_fq_enqueue()
   // Flow H
   printf("\nNFL: flow H: first packet: tstamp => %ld\n", thirdFlow->head->tstamp);
   printf("NFL: flow H: second packet: tstamp => %ld\n", thirdFlow->head->next->tstamp);
+
+  // ! ********** DEBUG **********
+  printf("\n----- EXTRA STUFF -----\n\n");
+  struct rb_root *root = &q->fq_root[3];
+
+  int rb_tree_height = getRbTreeHeight(root->rb_node);
+  printf("tree height: %d\n\n", rb_tree_height);
+  int numNodesInTree = getRbTreeSize(root->rb_node);
+  printf("num nodes in tree: %d\n", numNodesInTree);
+
+  struct rb_node **p = &root->rb_node;
+  struct fq_flow *f = rb_entry(*p, struct fq_flow, fq_node);
+  printf("\nroot flow in fq_root[3]: sk_hash: %u\n", f->sk->sk_hash);
+  printf("f credits: %d\n", f->credit);
+
+  // checking whether t_root of a flow refers to the rb-tree the flow is in or sth else
+  root = &f->t_root;
+  p = &root->rb_node;
+  struct fq_flow *f_likely = rb_entry(*p, struct fq_flow, fq_node);
+  printf("root flow in fq_root[3]: sk_hash: %u\n", f->sk->sk_hash);
+  numNodesInTree = getRbTreeSize(root->rb_node);
+  printf("num nodes in tree: %d\n", numNodesInTree);
+  // ! num nodes comes out as 0 and height as 0
+  // ? does this mean the t_root is sth else?
+}
+
+void Test_playground()
+{
+  struct fq_flow *flow1 = (struct fq_flow *)malloc(sizeof(struct fq_flow));
+  flow1->flowName = "F";
+  flow1->socket_hash = 1;
+
+  struct fq_flow *flow2 = (struct fq_flow *)malloc(sizeof(struct fq_flow));
+  flow2->flowName = "G";
+  flow2->socket_hash = 2;
+  flow1->next = flow2;
+
+  struct fq_flow *flow3 = (struct fq_flow *)malloc(sizeof(struct fq_flow));
+  flow3->flowName = "H";
+  flow3->socket_hash = 3;
+  flow2->next = flow3;
+
+  struct fq_flow *flowsListHead = flow1;
+
+  printFlowsList("NEW", flowsListHead);
 }
 
 /**

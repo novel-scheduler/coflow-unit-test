@@ -1,8 +1,12 @@
-A LOT OF ERRORS:
-- very hard to track down what's the issue
-- logic is very hard
-- SO MANY MISSING FUNCTIONS, LIBS, ETC.
-- most importantly, I am not able to follow a huge portion of it.
+<NOTES>: 
+- 
 
-- can I just write a very simple library that mimics the entire lifecycle of a scheduler? 
+<QUESTIONS>:
+- ith I can give a custom property/member named "flowName" to struct fq_flow so that I can use this to print out flow names
+- maybe a utility func that prints the entire flows list with property details
+  - vertical direction for printing the flows, and indentations for printing out flow properties (socket_hash of the flow)
+- another utility func that prints out the entire flow, given a flow name 
+  - not sure what to print, maybe the tstamp?
 
+<SUPER>:
+- 

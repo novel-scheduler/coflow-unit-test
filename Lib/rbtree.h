@@ -112,6 +112,22 @@ static inline void rb_link_node_rcu(struct rb_node *node, struct rb_node *parent
 // * HEON: added
 #define rb_to_skb(rb) rb_entry_safe(rb, struct sk_buff, rbnode)
 
+// * HEON: added
+// struct rb_node *rb_first(const struct rb_root *root)
+// {
+//   struct rb_node *n;
+
+//   n = root->rb_node;
+//   if (!n)
+//     return NULL;
+//   while (n->rb_left)
+//     n = n->rb_left;
+//   return n;
+// }
+
+// * HEON: added
+#define skb_rb_first(root) rb_to_skb(rb_first(root))
+
 /**
  * rbtree_postorder_for_each_entry_safe - iterate over rb_root in post order of
  * given type safe against removal of rb_node entry

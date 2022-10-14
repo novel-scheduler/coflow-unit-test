@@ -47,6 +47,8 @@ struct sock
   // TODO: incomplete
 };
 
+typedef unsigned int sk_buff_data_t;
+
 struct sk_buff
 {
   struct sk_buff *next;
@@ -56,6 +58,7 @@ struct sk_buff
   __u32 priority;
   struct rb_node rbnode;
   char cb[48];
+  sk_buff_data_t end;
 
   // TODO: incomplete
 };
@@ -133,6 +136,9 @@ unsigned long time_first, time_nw, time_elapsed;
  */
 struct fq_flow
 {
+  // HEON:ADD - custom member
+  char *flowName;
+
   /* First cache line : used in fq_gc(), fq_enqueue(), fq_dequeue() */
   struct rb_root t_root;
   struct sk_buff *head; /* list of skbs for this flow : first skb */
@@ -208,15 +214,16 @@ struct fq_sched_data
   struct qdisc_watchdog watchdog;
 };
 
-int height(struct rb_node *node)
+int getRbTreeHeight(struct rb_node *node)
 {
+  // printf("* FUNC: getRbTreeHeight\n");
   if (node == NULL)
     return 0;
   else
   {
     /* compute the height of each subtree */
-    int lheight = height(node->rb_left);
-    int rheight = height(node->rb_right);
+    int lheight = getRbTreeHeight(node->rb_left);
+    int rheight = getRbTreeHeight(node->rb_right);
     /* use the larger one */
     if (lheight > rheight)
     {
@@ -229,29 +236,36 @@ int height(struct rb_node *node)
   }
 }
 
-void printCurrentLevel(struct rb_node *root, int level)
+void printGivenLevel(struct rb_node *root, int level)
 {
   if (root == NULL)
     return;
   if (level == 1)
-  {
-    // cout << root->data << " ";
-    printf(" ");
-    printf("");
-  }
+    printf("D ");
   else if (level > 1)
   {
-    printCurrentLevel(root->rb_left, level - 1);
-    printCurrentLevel(root->rb_right, level - 1);
+    printGivenLevel(root->rb_left, level - 1);
+    printGivenLevel(root->rb_right, level - 1);
   }
 }
 
 void printLevelOrder(struct rb_node *root_node)
 {
-  int h = height(root_node);
+  int h = getRbTreeHeight(root_node);
   int i;
   for (i = 1; i <= h; i++)
-    printCurrentLevel(root_node, i);
+  {
+    printGivenLevel(root_node, i);
+    printf("\n");
+  }
+}
+
+int getRbTreeSize(struct rb_node *node)
+{
+  if (node == NULL)
+    return 0;
+  else
+    return (getRbTreeSize(node->rb_left) + 1 + getRbTreeSize(node->rb_right));
 }
 
 int valuePresentInArray(unsigned val, unsigned arr[], int lengthOfarray)
@@ -746,212 +760,242 @@ static struct fq_sched_data *fq_init()
   return q;
 }
 
-// TODO:
-// static struct sk_buff *fq_dequeue(struct Qdisc *sch)
-// {
-//   struct fq_sched_data *q = qdisc_priv(sch);
-//   struct fq_flow_head *head;
-//   struct sk_buff *skb;
-//   struct fq_flow *f, *coflow;
-//   unsigned long rate;
-//   int dcounter = 0;
-//   int coflowcounter = 0;
-//   u32 plen;
-//   u64 now;
-//   int lengthOfarray = 0;
-//   int i;
-//   int prevarray[2];
-//   int flag[2] = {0, 0};
+// TODO: not tested yet
+// * goes to the rb_tree the given flow is in, and returns the first packet of the leftmost flow in that rb_tree (which has the earliest time to send) (remember that rb_tree's key for sorting is the time to send)
+static struct sk_buff *fq_peek(struct fq_flow *flow)
+{
+  struct sk_buff *skb = skb_rb_first(&flow->t_root);
+  struct sk_buff *head = flow->head;
 
-//   for (i = 0; i < (sizeof(pFlowid) / sizeof(pFlowid[0])); i++)
-//   {
-//     lengthOfarray++;
-//   }
+  if (!skb)
+    return head;
 
-//   for (i = 0; i < lengthOfarray; i++)
-//   {
-//     prevarray[i] = -1;
-//   }
+  if (!head)
+    return skb;
 
-//   if (!sch->q.qlen)
-//     return NULL;
+  if (fq_skb_cb(skb)->time_to_send < fq_skb_cb(head)->time_to_send)
+    return skb;
+  return head;
+}
 
-//   skb = fq_peek(&q->internal);
-//   if (unlikely(skb))
-//   {
-//     fq_dequeue_skb(sch, &q->internal, skb);
-//     goto out;
-//   }
+// TODO: not tested yet
+// * HEON:ADD - param: struct fq_sched_data *q
+static struct sk_buff *fq_dequeue(struct Qdisc *sch, struct fq_sched_data *q)
+{
+  printf("*FUNC: fq_dequeue\n");
 
-//   q->ktime_cache = now = ktime_get_ns();
-//   fq_check_throttled(q, now);
+  // struct fq_sched_data *q = qdisc_priv(sch);
+  // * Dummy fq_sched_data passed
 
-//   /*dequeuing using barrier process*/
+  struct fq_flow_head *head;
+  struct sk_buff *skb;
+  struct fq_flow *f, *coflow;
+  unsigned long rate;
+  int dcounter = 0;
+  int coflowcounter = 0;
+  u32 plen;
+  u64 now;
+  int lengthOfarray = 0;
+  int i;
+  int prevarray[2];
+  int flag[2] = {0, 0};
 
-// begin:
-//   head = &q->co_flows;
-//   // printk("adding In co-flow \n");
-//   if (!head->first)
-//   {
-//     head = &q->new_flows;
-//     if (!head->first)
-//     {
-//       head = &q->old_flows;
-//       if (!head->first)
-//       {
-//         if (q->time_next_delayed_flow != ~0ULL)
-//           qdisc_watchdog_schedule_range_ns(
-//               &q->watchdog, q->time_next_delayed_flow, q->timer_slack);
-//         return NULL;
-//       }
-//     }
-//   }
+  for (i = 0; i < (sizeof(pFlowid) / sizeof(pFlowid[0])); i++)
+  {
+    lengthOfarray++;
+  }
 
-//   f = head->first;
+  for (i = 0; i < lengthOfarray; i++)
+  {
+    prevarray[i] = -1;
+  }
 
-//   int rValue = valuePresentInArray(f->socket_hash, pFlowid, lengthOfarray);
+  if (!sch->q.qlen)
+  {
+    printf("sch->q.qlen == 0");
+    return NULL;
+  }
 
-//   if (rValue != -1)
-//   {
+  // * priority packets, not for now
+  // skb = fq_peek(&q->internal);
+  // if (unlikely(skb))
+  // {
+  //   fq_dequeue_skb(sch, &q->internal, skb);
+  //   goto out;
+  // }
 
-//     if (flag[rValue] == 0)
-//     {
+  // * edge case where packets are rate limited
+  // q->ktime_cache = now = ktime_get_ns();
+  // fq_check_throttled(q, now);
 
-//       coflowcounter++;
-//       flag[rValue] = 1;
-//     }
-//   }
+  /*dequeuing using barrier process*/
 
-//   /*if (rValue != -1)
-//   {
-//     coflowcounter++;
-//   }*/
+begin:
+  head = &q->co_flows;
+  // printk("adding In co-flow \n");
+  if (!head->first)
+  {
+    head = &q->new_flows;
+    if (!head->first)
+    {
+      head = &q->old_flows;
+      if (!head->first)
+      {
+        // * for saving resources - basically reducing number of check operations by putting to sleep
+        // if (q->time_next_delayed_flow != ~0ULL)
+        //   qdisc_watchdog_schedule_range_ns(
+        //       &q->watchdog, q->time_next_delayed_flow, q->timer_slack);
+        return NULL;
+      }
+    }
+  }
 
-//   // printk("rValue is   : %d \n ", rValue);
+  f = head->first;
 
-//   // printk("barrier value  : %d \n ", barrier[dcounter]);
+  // * lengthOfarray will be 2 (set by using pFlowid) -> meaning first two flows will be considered as part of the coflow task
+  int rValue = valuePresentInArray(f->socket_hash, pFlowid, lengthOfarray);
 
-//   // Breach and membership of the flow is checked once it is satisfied all the
-//   // flows are added to co-flow set at once
-//   if ((rValue != -1) && (barrier[dcounter] == 3))
-//   {
-//     printk("Breach Occured \n");
-//     barrier[dcounter] = 0;
-//     head->first = f->next;
-//     printk("adding all co-flows together \n");
-//     Promotecoflows(&q->old_flows, &q->new_flows, &q->co_flows, f, coflow,
-//                    pFlowid, lengthOfarray);
-//   }
+  if (rValue != -1)
+  {
+    if (flag[rValue] == 0)
+    {
+      coflowcounter++;
+      flag[rValue] = 1;
+    }
+  }
 
-//   if (!barrier[dcounter] && (coflowcounter == lengthOfarray))
-//   {
-//     dcounter++;
-//     coflowcounter = 0;
-//   }
+  // printk("rValue is   : %d \n ", rValue);
 
-//   /*demotion is defualt and we need not use any specific function because of how
-//    * the flows are added to old flows if 	cedit is not enough to send the
-//    * packets*/
+  // printk("barrier value  : %d \n ", barrier[dcounter]);
 
-//   if (f->credit <= 0)
-//   {
-//     f->credit += q->quantum;
-//     head->first = f->next;
-//     fq_flow_add_tail(&q->old_flows, f);
-//     goto begin;
-//   }
+  // Breach and membership of the flow is checked once it is satisfied all the
+  // flows are added to co-flow set at once
+  if ((rValue != -1) && (barrier[dcounter] == 3))
+  {
+    // printk("Breach Occured \n");
+    barrier[dcounter] = 0;
+    head->first = f->next;
+    // printk("adding all co-flows together \n");
+    Promotecoflows(&q->old_flows, &q->new_flows, &q->co_flows, f, coflow,
+                   pFlowid, lengthOfarray);
+  }
 
-//   skb = fq_peek(f);
-//   if (skb)
-//   {
-//     u64 time_next_packet =
-//         max_t(u64, fq_skb_cb(skb)->time_to_send, f->time_next_packet);
+  // * prepare for next set of flows/packets
+  if (!barrier[dcounter] && (coflowcounter == lengthOfarray))
+  {
+    dcounter++;
+    coflowcounter = 0;
+  }
 
-//     if (now < time_next_packet)
-//     {
-//       head->first = f->next;
-//       f->time_next_packet = time_next_packet;
-//       fq_flow_set_throttled(q, f);
-//       goto begin;
-//     }
-//     prefetch(&skb->end);
-//     if ((s64)(now - time_next_packet - q->ce_threshold) > 0)
-//     {
-//       INET_ECN_set_ce(skb);
-//       q->stat_ce_mark++;
-//     }
-//     fq_dequeue_skb(sch, f, skb);
-//   }
-//   else
-//   {
-//     head->first = f->next;
-//     /* force a pass through old_flows to prevent starvation */
-//     if ((head == &q->new_flows) && q->old_flows.first)
-//     {
-//       fq_flow_add_tail(&q->old_flows, f);
-//     }
-//     else
-//     {
-//       fq_flow_set_detached(f);
-//       q->inactive_flows++;
-//     }
-//     goto begin;
-//   }
-//   plen = qdisc_pkt_len(skb);
-//   f->credit -= plen;
+  /*demotion is defualt and we need not use any specific function because of how
+   * the flows are added to old flows if 	cedit is not enough to send the
+   * packets*/
 
-//   if (!q->rate_enable)
-//     goto out;
+  // TODO: fq_enqueue adds credit -> check later if it does, or this will result in unwanted behavior
+  // * put the flow at the back of the old flows list
+  // * HEON: ig this means one flow can repeatedly reach this line -> one flow having sufficient credit to transmit many times -> so every time it transmits sth, it is checked at this line whether it has enough credit -> if not, then it has exhausted all of its credits, ready to be moved to the back of the line
+  if (f->credit <= 0)
+  {
+    f->credit += q->quantum;
+    head->first = f->next;
+    fq_flow_add_tail(&q->old_flows, f);
+    goto begin;
+  }
 
-//   rate = q->flow_max_rate;
+  // * gets leftmost (earliest time to send) sk_buff
+  // ? fq_peek uses t_root of the flow -> if the t_root is the same thing as the rb_tree that contains multiple flows, then getting the leftmost of the tree means getting a possibly different flow than the one in fq_peek(f) -> does it make sense to process packets that are not from the current flow?
+  // TODO:HEON
+  skb = fq_peek(f);
+  if (skb)
+  {
+    u64 time_next_packet =
+        max_t(u64, fq_skb_cb(skb)->time_to_send, f->time_next_packet);
 
-//   /* If EDT time was provided for this skb, we need to
-//    * update f->time_next_packet only if this qdisc enforces
-//    * a flow max rate.
-//    */
-//   if (!skb->tstamp)
-//   {
-//     if (skb->sk)
-//       rate = min(skb->sk->sk_pacing_rate, rate);
+    if (now < time_next_packet)
+    {
+      head->first = f->next;
+      f->time_next_packet = time_next_packet;
+      fq_flow_set_throttled(q, f);
+      goto begin;
+    }
+    prefetch(&skb->end);
+    if ((s64)(now - time_next_packet - q->ce_threshold) > 0)
+    {
+      INET_ECN_set_ce(skb);
+      q->stat_ce_mark++;
+    }
+    fq_dequeue_skb(sch, f, skb);
+  }
+  else
+  {
+    head->first = f->next;
+    /* force a pass through old_flows to prevent starvation */
+    if ((head == &q->new_flows) && q->old_flows.first)
+    {
+      fq_flow_add_tail(&q->old_flows, f);
+    }
+    else
+    {
+      fq_flow_set_detached(f);
+      q->inactive_flows++;
+    }
+    goto begin;
+  }
+  plen = qdisc_pkt_len(skb);
+  f->credit -= plen;
 
-//     if (rate <= q->low_rate_threshold)
-//     {
-//       f->credit = 0;
-//     }
-//     else
-//     {
-//       plen = max(plen, q->quantum);
-//       if (f->credit > 0)
-//         goto out;
-//     }
-//   }
-//   if (rate != ~0UL)
-//   {
-//     u64 len = (u64)plen * NSEC_PER_SEC;
+  if (!q->rate_enable)
+    goto out;
 
-//     if (likely(rate))
-//       len = div64_ul(len, rate);
-//     /* Since socket rate can change later,
-//      * clamp the delay to 1 second.
-//      * Really, providers of too big packets should be fixed !
-//      */
-//     if (unlikely(len > NSEC_PER_SEC))
-//     {
-//       len = NSEC_PER_SEC;
-//       q->stat_pkts_too_long++;
-//     }
-//     /* Account for schedule/timers drifts.
-//      * f->time_next_packet was set when prior packet was sent,
-//      * and current time (@now) can be too late by tens of us.
-//      */
-//     if (f->time_next_packet)
-//       len -= min(len / 2, now - f->time_next_packet);
-//     f->time_next_packet = now + len;
-//   }
-// out:
-//   qdisc_bstats_update(sch, skb);
-//   return skb;
-// }
+  rate = q->flow_max_rate;
+
+  /* If EDT time was provided for this skb, we need to
+   * update f->time_next_packet only if this qdisc enforces
+   * a flow max rate.
+   */
+  if (!skb->tstamp)
+  {
+    if (skb->sk)
+      rate = min(skb->sk->sk_pacing_rate, rate);
+
+    if (rate <= q->low_rate_threshold)
+    {
+      f->credit = 0;
+    }
+    else
+    {
+      plen = max(plen, q->quantum);
+      if (f->credit > 0)
+        goto out;
+    }
+  }
+  if (rate != ~0UL)
+  {
+    u64 len = (u64)plen * NSEC_PER_SEC;
+
+    if (likely(rate))
+      len = div64_ul(len, rate);
+    /* Since socket rate can change later,
+     * clamp the delay to 1 second.
+     * Really, providers of too big packets should be fixed !
+     */
+    if (unlikely(len > NSEC_PER_SEC))
+    {
+      len = NSEC_PER_SEC;
+      q->stat_pkts_too_long++;
+    }
+    /* Account for schedule/timers drifts.
+     * f->time_next_packet was set when prior packet was sent,
+     * and current time (@now) can be too late by tens of us.
+     */
+    if (f->time_next_packet)
+      len -= min(len / 2, now - f->time_next_packet);
+    f->time_next_packet = now + len;
+  }
+out:
+  qdisc_bstats_update(sch, skb);
+  return skb;
+}
 
 // * need a dummy skb & sch
 static int fq_enqueue(struct fq_sched_data *q, struct sk_buff *skb, struct Qdisc *sch, struct sk_buff **to_free)
