@@ -456,6 +456,7 @@ void Test2_fq_dequeue(struct Qdisc *sch, struct fq_sched_data *q)
 
   printFlowsList("NEW", q->new_flows.first);
   printFlowsList("OLD", q->old_flows.first);
+  printFlowsList("CO", q->co_flows.first);
 
   printf("\n\n");
 

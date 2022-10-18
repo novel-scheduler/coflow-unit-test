@@ -147,8 +147,8 @@ int barriercounter_flow[2] = {0};
 
 int dcounter = 0;
 
-u32 pFlowid[2] = {-1, -1};
-// u32 pFlowid[2] = {5, 1111}; // * changed by Heon
+// u32 pFlowid[2] = {-1, -1};
+u32 pFlowid[2] = {5, 1111}; // * changed by Heon
 
 int firstflag = 0;
 
@@ -915,6 +915,7 @@ begin:
       head = &q->old_flows;
       if (!head->first)
       {
+        printf("DEADEND reached\n");
         // * for saving resources - basically reducing number of check operations by putting to sleep
         // if (q->time_next_delayed_flow != ~0ULL)
         //   qdisc_watchdog_schedule_range_ns(
@@ -931,6 +932,7 @@ begin:
 
   if (rValue != -1)
   {
+    printf("CF: VALUE FOUND\n");
     if (flag[rValue] == 0)
     {
       coflowcounter++;

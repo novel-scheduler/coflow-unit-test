@@ -8,5 +8,11 @@
 - another utility func that prints out the entire flow, given a flow name 
   - not sure what to print, maybe the tstamp?
 
+<ISSUES>:
+- u32 pFlowid[2] = {-1, -1}; -> I used {5, 1111}
+  - Result: "time_next_packet: 1666137344" for one of the packets -> this is not from any of my custom tstamps
+  - Result: all flow lists are empty (even the coflows list)
+  - Q: is this due to Promotecoflows()? some weird things happen when valuePresentInArray() returns true
+
 <SUPER>:
 - 
