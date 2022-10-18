@@ -289,7 +289,7 @@ void printFlowsList(char *flowsListType, struct fq_flow *flowsListHead)
     printf("%s", emptyLine);
     ptr = ptr->next;
   }
-  printf("***************************\n\n");
+  printf("*******************************\n\n");
 }
 
 // *** EXPECT TEST FUNCTIONS ***

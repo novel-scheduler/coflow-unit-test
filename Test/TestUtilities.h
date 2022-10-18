@@ -27,6 +27,18 @@
 #define time_after(a, b) \
   (((long)((b) - (a)) < 0))
 
+#define NSEC_PER_SEC 1000L
+
+#define likely(x) __builtin_expect(!!(x), 1)
+#define unlikely(x) __builtin_expect(!!(x), 0)
+
+#define div64_ul(x, y) div64_u64((x), (y))
+
+static inline u64 div64_u64(u64 dividend, u64 divisor)
+{
+  return dividend / divisor;
+}
+
 typedef s64 ktime_t;
 
 typedef unsigned int __u32;
@@ -36,9 +48,19 @@ struct qdisc_skb_head
   __u32 qlen;
 };
 
+struct net_device
+{
+};
+
+struct netdev_queue
+{
+  struct net_device *dev;
+};
+
 struct Qdisc
 {
   struct qdisc_skb_head q;
+  struct netdev_queue *dev_queue;
 };
 
 struct sock
@@ -60,6 +82,10 @@ struct sk_buff
   struct rb_node rbnode;
   char cb[48];
   sk_buff_data_t end;
+  struct net_device *dev;
+
+  // * custom field so that user can manually set packet size
+  int plen;
 
   // TODO: incomplete
 };
@@ -94,6 +120,11 @@ static inline struct fq_skb_cb *fq_skb_cb(struct sk_buff *skb)
   return (struct fq_skb_cb *)qdisc_skb_cb(skb)->data;
 }
 
+static inline struct net_device *qdisc_dev(const struct Qdisc *qdisc)
+{
+  return qdisc->dev_queue->dev;
+}
+
 struct qdisc_watchdog
 {
 };
@@ -117,6 +148,7 @@ int barriercounter_flow[2] = {0};
 int dcounter = 0;
 
 u32 pFlowid[2] = {-1, -1};
+// u32 pFlowid[2] = {5, 1111}; // * changed by Heon
 
 int firstflag = 0;
 
@@ -271,21 +303,21 @@ int getRbTreeSize(struct rb_node *node)
 
 int valuePresentInArray(unsigned val, unsigned arr[], int lengthOfarray)
 {
-  printf("value to be searched is %u\n", val);
+  // printf("value to be searched is %u\n", val);
+  printf("* FUNC: valuePresentInArray\n");
 
   int i;
 
   for (i = 0; i < lengthOfarray; i++)
   {
-    printf("In Array Present function Array Value is  %u\n", arr[i]);
+    // printf("In Array Present function Array Value is  %u\n", arr[i]);
     if (arr[i] == val)
     {
-      printf("In Array Present function match occured value present index value "
-             "of %d\n",
-             i);
+      // printf("In Array Present function match occured value present index value of %d\n", i);
       return i;
     }
   }
+  printf("value NOT present\n");
   return -1;
 }
 
@@ -812,7 +844,7 @@ static void fq_dequeue_skb(struct Qdisc *sch, struct fq_flow *flow, struct sk_bu
   fq_erase_head(sch, flow, skb);
   skb_mark_not_on_list(skb);
   flow->qlen--;
-  qdisc_qstats_backlog_dec(sch, skb);
+  // qdisc_qstats_backlog_dec(sch, skb);
   sch->q.qlen--;
 }
 
@@ -820,7 +852,7 @@ static void fq_dequeue_skb(struct Qdisc *sch, struct fq_flow *flow, struct sk_bu
 // * HEON:ADD - param: struct fq_sched_data *q
 static struct sk_buff *fq_dequeue(struct Qdisc *sch, struct fq_sched_data *q)
 {
-  printf("*FUNC: fq_dequeue\n");
+  printf("\n*FUNC: fq_dequeue\n");
 
   // struct fq_sched_data *q = qdisc_priv(sch);
   // * Dummy fq_sched_data passed
@@ -832,7 +864,7 @@ static struct sk_buff *fq_dequeue(struct Qdisc *sch, struct fq_sched_data *q)
   int dcounter = 0;
   int coflowcounter = 0;
   u32 plen;
-  u64 now;
+  u64 now = 100; // * manual value of 100
   int lengthOfarray = 0;
   int i;
   int prevarray[2];
@@ -868,14 +900,18 @@ static struct sk_buff *fq_dequeue(struct Qdisc *sch, struct fq_sched_data *q)
 
   /*dequeuing using barrier process*/
 
+  printf("BEFORE: begin\n");
+
 begin:
+  printf("CFL reached\n");
   head = &q->co_flows;
-  // printk("adding In co-flow \n");
   if (!head->first)
   {
+    printf("NFL reached\n");
     head = &q->new_flows;
     if (!head->first)
     {
+      printf("OFL reached\n");
       head = &q->old_flows;
       if (!head->first)
       {
@@ -910,7 +946,7 @@ begin:
   // flows are added to co-flow set at once
   if ((rValue != -1) && (barrier[dcounter] == 3))
   {
-    // printk("Breach Occured \n");
+    printf("*** Coflow BREACH! -> promoting coflows\n");
     barrier[dcounter] = 0;
     head->first = f->next;
     // printk("adding all co-flows together \n");
@@ -932,27 +968,40 @@ begin:
   // TODO: fq_enqueue adds credit -> check later if it does, or this will result in unwanted behavior
   // * put the flow at the back of the old flows list
   // * HEON: ig this means one flow can repeatedly reach this line -> one flow having sufficient credit to transmit many times -> so every time it transmits sth, it is checked at this line whether it has enough credit -> if not, then it has exhausted all of its credits, ready to be moved to the back of the line
+  printf("f->credit == %d\n", f->credit);
   if (f->credit <= 0)
   {
+    printf("f->credit <= 0: TRUE\n");
     f->credit += q->quantum;
+    printf("Give CREDIT to flow: f->credit: %d\n", f->credit);
     head->first = f->next;
+    // * HEON: this is where we mainly expect it to move the new flows to the old flows list
+    printf("MOVING: NEW flow to OLD flow && iterating to NEXT flow due to NO CREDIT\n\n");
     fq_flow_add_tail(&q->old_flows, f);
     goto begin;
   }
 
   // * gets leftmost (earliest time to send) sk_buff
-  // TODO:HEON
   // * the head sbk/pkt of the flow is the key for organizing flows in the rb_tree
   // * we get the leftmost flow's head packet to run a max() to get the higher time to send
+  printf("BEFORE - fq_peek(f)\n");
   skb = fq_peek(f);
+  printf("skb != NULL: %d\n", skb != NULL);
+  // printf("sbk->sk->sk_hash: %u\n", skb->sk->sk_hash);
   if (skb)
   {
+    printf("if (skb) TRUE branch\n");
     // * gets the farthest time to send -> if it is larger than current time (now), don't process packet
     u64 time_next_packet =
         max_t(u64, fq_skb_cb(skb)->time_to_send, f->time_next_packet);
 
+    // * time_next_packet is equal to tstamp of skb user inputted
+    printf("time_next_packet: %u\n", time_next_packet);
+    printf("now: %u\n", now);
+
     if (now < time_next_packet)
     {
+      printf("now < time_next_packet == TRUE\n");
       head->first = f->next;
       f->time_next_packet = time_next_packet;
       // fq_flow_set_throttled(q, f);
@@ -970,11 +1019,13 @@ begin:
   }
   else
   {
+    printf("if (skb) FALSE branch\n");
     // * if there's no pkts to send for current flow, proceed to next flow
     head->first = f->next;
     /* force a pass through old_flows to prevent starvation */
     if ((head == &q->new_flows) && q->old_flows.first)
     {
+      printf("MOVING: NEW flow to OLD flow && going back to BEGIN due to NO PACKETS\n\n");
       fq_flow_add_tail(&q->old_flows, f);
     }
     else
@@ -985,14 +1036,18 @@ begin:
     goto begin;
   }
 
-  plen = qdisc_pkt_len(skb);
+  // plen = qdisc_pkt_len(skb);
+  plen = skb->plen;
+  printf("sbk->tstamp: %u\n", skb->tstamp);
+  printf("plen: %u\n", plen);
   f->credit -= plen;
+  printf("AFTER plen subtraction: f->credit == %d\n", f->credit);
 
   // * pacing
   // if (!q->rate_enable)
   //   goto out;
 
-  // TODO:HEON:POINTER
+  // * flow_max_rate is initialized as ~0UL
   rate = q->flow_max_rate;
 
   /* If EDT time was provided for this skb, we need to
@@ -1028,6 +1083,11 @@ begin:
     if (unlikely(len > NSEC_PER_SEC))
     {
       len = NSEC_PER_SEC;
+      // * HEON:ADDED - init if not initialized
+      if (q->stat_pkts_too_long == NULL)
+      {
+        q->stat_pkts_too_long = 0;
+      }
       q->stat_pkts_too_long++;
     }
     /* Account for schedule/timers drifts.
@@ -1039,7 +1099,8 @@ begin:
     f->time_next_packet = now + len;
   }
 out:
-  qdisc_bstats_update(sch, skb);
+  // qdisc_bstats_update(sch, skb);
+  printf("OUT\n");
   return skb;
 }
 

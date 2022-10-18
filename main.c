@@ -4,6 +4,18 @@
 #include <stdlib.h>
 #include "./Util/testing.h"
 
+void init(struct fq_sched_data **q, struct Qdisc **sch)
+{
+  struct fq_sched_data *q_tobe = fq_init();
+
+  struct Qdisc *sch_tobe = (struct Qdisc *)malloc(sizeof(struct Qdisc));
+  sch_tobe->dev_queue = (struct netdev_queue *)malloc(sizeof(struct netdev_queue));
+  sch_tobe->dev_queue->dev = (struct net_device *)malloc(sizeof(struct net_device));
+
+  (*q) = q_tobe;
+  (*sch) = sch_tobe;
+}
+
 void before(char *testSuiteName)
 {
   // initialize expect object
@@ -255,7 +267,7 @@ void Test_fq_enqueue()
   printf("\nroot flow in fq_root[3]: sk_hash: %u\n", f->sk->sk_hash);
 }
 
-void Test2_fq_enqueue()
+void Test2_fq_enqueue(struct Qdisc *sch, struct fq_sched_data *q)
 {
   /*
   <scenario>: (6 total pkts)
@@ -316,6 +328,10 @@ void Test2_fq_enqueue()
   skb_f_2->sk = sk_f;
   skb_f_2->tstamp = 4;
 
+  // set custom packet sizes
+  skb_f_1->plen = 100000;
+  skb_f_2->plen = 50000;
+
   // * flow G
   // socket of flow
   struct sock *sk_g = malloc(sizeof(struct sock));
@@ -326,6 +342,8 @@ void Test2_fq_enqueue()
 
   skb_g_1->sk = sk_g;
   skb_g_1->tstamp = 2;
+
+  skb_g_1->plen = 50000;
 
   // * flow H
   // socket of flow
@@ -341,6 +359,9 @@ void Test2_fq_enqueue()
   skb_h_2->sk = sk_h;
   skb_h_2->tstamp = 5;
 
+  skb_h_1->plen = 50000;
+  skb_h_2->plen = 50000;
+
   // * flow K
   // socket of flow
   struct sock *sk_k = malloc(sizeof(struct sock));
@@ -352,12 +373,10 @@ void Test2_fq_enqueue()
   skb_k_1->sk = sk_k;
   skb_k_1->tstamp = 6;
 
+  skb_k_1->plen = 50000;
+
   // initial config
-  struct Qdisc *sch = (struct Qdisc *)malloc(sizeof(struct Qdisc));
-
   struct sk_buff *to_free = (struct sk_buff *)malloc(sizeof(struct sk_buff));
-
-  struct fq_sched_data *q = fq_init();
 
   // * ENQUEUE
   // enqueue them in the order of the tstamps
@@ -369,6 +388,11 @@ void Test2_fq_enqueue()
   fq_enqueue(q, skb_k_1, sch, &to_free);
 
   printf("\n----- AFTER Enqueue -----\n\n");
+
+  printFlowsList("NEW", q->new_flows.first);
+  printFlowsList("OLD", q->old_flows.first);
+
+  printf("\n\n");
 
   // Check New Flows List Content
   struct fq_flow *firstFlow = q->new_flows.first;
@@ -395,28 +419,52 @@ void Test2_fq_enqueue()
   printf("NFL: flow H: second packet: tstamp => %ld\n", thirdFlow->head->next->tstamp);
 
   // ! ********** DEBUG **********
-  printf("\n----- EXTRA STUFF -----\n\n");
-  struct rb_root *root = &q->fq_root[3];
+  // printf("\n----- EXTRA STUFF -----\n\n");
+  // struct rb_root *root = &q->fq_root[3];
 
-  int rb_tree_height = getRbTreeHeight(root->rb_node);
-  printf("tree height: %d\n\n", rb_tree_height);
-  int numNodesInTree = getRbTreeSize(root->rb_node);
-  printf("num nodes in tree: %d\n", numNodesInTree);
+  // int rb_tree_height = getRbTreeHeight(root->rb_node);
+  // printf("tree height: %d\n\n", rb_tree_height);
+  // int numNodesInTree = getRbTreeSize(root->rb_node);
+  // printf("num nodes in tree: %d\n", numNodesInTree);
 
-  struct rb_node **p = &root->rb_node;
-  struct fq_flow *f = rb_entry(*p, struct fq_flow, fq_node);
-  printf("\nroot flow in fq_root[3]: sk_hash: %u\n", f->sk->sk_hash);
-  printf("f credits: %d\n", f->credit);
+  // struct rb_node **p = &root->rb_node;
+  // struct fq_flow *f = rb_entry(*p, struct fq_flow, fq_node);
+  // printf("\nroot flow in fq_root[3]: sk_hash: %u\n", f->sk->sk_hash);
+  // printf("f credits: %d\n", f->credit);
 
-  // checking whether t_root of a flow refers to the rb-tree the flow is in or sth else
-  root = &f->t_root;
-  p = &root->rb_node;
-  struct fq_flow *f_likely = rb_entry(*p, struct fq_flow, fq_node);
-  printf("root flow in fq_root[3]: sk_hash: %u\n", f->sk->sk_hash);
-  numNodesInTree = getRbTreeSize(root->rb_node);
-  printf("num nodes in tree: %d\n", numNodesInTree);
-  // ! num nodes comes out as 0 and height as 0
-  // ? does this mean the t_root is sth else?
+  // // checking whether t_root of a flow refers to the rb-tree the flow is in or sth else
+  // root = &f->t_root;
+  // p = &root->rb_node;
+  // struct fq_flow *f_likely = rb_entry(*p, struct fq_flow, fq_node);
+  // printf("root flow in fq_root[3]: sk_hash: %u\n", f->sk->sk_hash);
+  // numNodesInTree = getRbTreeSize(root->rb_node);
+  // printf("num nodes in tree: %d\n", numNodesInTree);
+  // // ! num nodes comes out as 0 and height as 0
+  // // ? does this mean the t_root is sth else?
+}
+
+void Test2_fq_dequeue(struct Qdisc *sch, struct fq_sched_data *q)
+{
+  fq_dequeue(sch, q);
+  fq_dequeue(sch, q);
+  fq_dequeue(sch, q);
+  fq_dequeue(sch, q);
+  fq_dequeue(sch, q);
+  fq_dequeue(sch, q);
+
+  printf("\n----- AFTER Dequeue -----\n\n");
+
+  printFlowsList("NEW", q->new_flows.first);
+  printFlowsList("OLD", q->old_flows.first);
+
+  printf("\n\n");
+
+  // * If flow got moved to OFL due to credit exhaustion, it should have no packets. It packets run out before credits are used up, the flow will still have some packets left to transmit
+  // printf("q->old_flows.first->head != NULL: %d\n", q->old_flows.first->head != NULL);
+  // * only call this if there is at least one packet in the flow
+  // printf("q->old_flows.first->head->tstamp: %u\n", q->old_flows.first->head->tstamp);
+
+  // if credit <= 0 for flow -> fq_dequeue will
 }
 
 void Test_playground()
@@ -445,6 +493,11 @@ void Test_playground()
  */
 int main()
 {
+  // initial config
+  struct fq_sched_data *q;
+  struct Qdisc *sch;
+  init(&q, &sch);
+
   printTestingSessionStartText();
 
   // *** TEST SUITES ***
@@ -470,7 +523,11 @@ int main()
   // after();
 
   before("Test2_fq_enqueue");
-  Test2_fq_enqueue();
+  Test2_fq_enqueue(sch, q);
+  after();
+
+  before("Test2_fq_dequeue");
+  Test2_fq_dequeue(sch, q);
   after();
 
   printTestingSessionResult();
