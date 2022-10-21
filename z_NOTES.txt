@@ -1,5 +1,8 @@
 <NOTES>: 
-- 
+- come up with a way to differentiate pure coflow logic + stuff that is used to make the code work in user space 
+  - can use VSCode's file diff (red + green)
+  - can look at commented out code
+- need more (useful) test cases
 
 <QUESTIONS>:
 - ith I can give a custom property/member named "flowName" to struct fq_flow so that I can use this to print out flow names
@@ -16,3 +19,4 @@
 
 <SUPER>:
 - 
+

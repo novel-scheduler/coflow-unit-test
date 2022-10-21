@@ -149,6 +149,7 @@ int dcounter = 0;
 
 // u32 pFlowid[2] = {-1, -1};
 u32 pFlowid[2] = {5, 1111}; // * changed by Heon
+// u32 pFlowid[2] = {3, 5}; // * changed by Heon
 
 int firstflag = 0;
 
