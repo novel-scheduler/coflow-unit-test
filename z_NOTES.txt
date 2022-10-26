@@ -20,3 +20,7 @@
 <SUPER>:
 - 
 
+
+
+<make command for "json-c" library>:
+gcc main.c -I /common/home/hy368/Desktop/Research/json-c-build/  -l json-c -o main

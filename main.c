@@ -1,8 +1,15 @@
 #include "./Lib/build_bug.h"
 #include "./Lib/hash.h"
+
 #include <stdio.h>
 #include <stdlib.h>
+#include <assert.h>
+#include <limits.h>
+#include <stddef.h>
+#include <string.h>
+
 #include "./Util/testing.h"
+#include <json-c/json.h>
 
 void init(struct fq_sched_data **q, struct Qdisc **sch)
 {
@@ -445,12 +452,15 @@ void Test2_fq_enqueue(struct Qdisc *sch, struct fq_sched_data *q)
 
 void Test2_fq_dequeue(struct Qdisc *sch, struct fq_sched_data *q)
 {
-  fq_dequeue(sch, q);
-  fq_dequeue(sch, q);
-  fq_dequeue(sch, q);
-  fq_dequeue(sch, q);
-  fq_dequeue(sch, q);
-  fq_dequeue(sch, q);
+  struct dequeued_pkt_info *dequeued_pkts_LL_head = NULL;
+  struct dequeued_pkt_info *dequeued_pkts_LL_tail = NULL;
+
+  fq_dequeue(sch, q, &dequeued_pkts_LL_head, &dequeued_pkts_LL_tail);
+  fq_dequeue(sch, q, &dequeued_pkts_LL_head, &dequeued_pkts_LL_tail);
+  fq_dequeue(sch, q, &dequeued_pkts_LL_head, &dequeued_pkts_LL_tail);
+  fq_dequeue(sch, q, &dequeued_pkts_LL_head, &dequeued_pkts_LL_tail);
+  fq_dequeue(sch, q, &dequeued_pkts_LL_head, &dequeued_pkts_LL_tail);
+  fq_dequeue(sch, q, &dequeued_pkts_LL_head, &dequeued_pkts_LL_tail);
 
   printf("\n----- AFTER Dequeue -----\n\n");
 
@@ -460,12 +470,14 @@ void Test2_fq_dequeue(struct Qdisc *sch, struct fq_sched_data *q)
 
   printf("\n\n");
 
+  // printDequeuedInfoList(dequeued_pkts_LL_head);
+
   // * If flow got moved to OFL due to credit exhaustion, it should have no packets. It packets run out before credits are used up, the flow will still have some packets left to transmit
   // printf("q->old_flows.first->head != NULL: %d\n", q->old_flows.first->head != NULL);
   // * only call this if there is at least one packet in the flow
   // printf("q->old_flows.first->head->tstamp: %u\n", q->old_flows.first->head->tstamp);
 
-  // if credit <= 0 for flow -> fq_dequeue will
+  // if credit <= 0 for flow -> fq_dequeue will...
 }
 
 void Test_playground()
@@ -489,6 +501,62 @@ void Test_playground()
   printFlowsList("NEW", flowsListHead);
 }
 
+void Test_json_sample()
+{
+  FILE *fp;
+  char buffer[1024];
+
+  struct json_object *parsed_json;
+
+  struct json_object *name;
+  struct json_object *age;
+  struct json_object *friends;
+
+  struct json_object *friend;
+
+  size_t n_friends;
+  size_t i;
+
+  fp = fopen("test.json", "r");
+  fread(buffer, 1024, 1, fp);
+  fclose(fp);
+
+  parsed_json = json_tokener_parse(buffer);
+
+  json_object_object_get_ex(parsed_json, "name", &name);
+  json_object_object_get_ex(parsed_json, "age", &age);
+  json_object_object_get_ex(parsed_json, "friends", &friends);
+
+  printf("Name: %s\n", json_object_get_string(name));
+  printf("Age: %d\n", json_object_get_int(age));
+
+  char *type = json_type_to_name(json_object_get_type(friends));
+  printf("%s\n", type);
+
+  n_friends = json_object_array_length(friends);
+  printf("Found %lu friends\n", n_friends);
+
+  for (i = 0; i < n_friends; i++)
+  {
+    friend = json_object_array_get_idx(friends, i);
+    printf("%lu: %s\n", i + 1, json_object_get_string(friend));
+  }
+}
+
+void Test_enqueue_dequeue_using_json(char *jsonFileName, struct Qdisc *sch, struct fq_sched_data *q)
+{
+  struct dequeued_pkt_info *dequeued_pkts_LL_head = NULL;
+  struct dequeued_pkt_info *dequeued_pkts_LL_tail = NULL;
+
+  enqueue_dequeue(jsonFileName, sch, q, &dequeued_pkts_LL_head, &dequeued_pkts_LL_tail);
+
+  printDequeuedInfoList(dequeued_pkts_LL_head);
+
+  printFlowsList("NEW", q->new_flows.first);
+  printFlowsList("OLD", q->old_flows.first);
+  printFlowsList("CO", q->co_flows.first);
+}
+
 /**
  * Main Testing Program.
  */
@@ -503,32 +571,17 @@ int main()
 
   // *** TEST SUITES ***
 
-  // before("Test_Sample");
-  // Test_Sample();
+  // *** ENQUEUE & DEQUEUE TEST ***
+  // before("Test2_fq_enqueue");
+  // Test2_fq_enqueue(sch, q);
   // after();
 
-  // before("Test_fq_flow_add_tail");
-  // Test_fq_flow_add_tail();
+  // before("Test2_fq_dequeue");
+  // Test2_fq_dequeue(sch, q);
   // after();
 
-  // before("Test_valuePresentInArray");
-  // Test_valuePresentInArray();
-  // after();
-
-  // before("Test_Promotecoflows");
-  // Test_Promotecoflows();
-  // after();
-
-  // before("Test_fq_enqueue");
-  // Test_fq_enqueue();
-  // after();
-
-  before("Test2_fq_enqueue");
-  Test2_fq_enqueue(sch, q);
-  after();
-
-  before("Test2_fq_dequeue");
-  Test2_fq_dequeue(sch, q);
+  before("Test_enqueue_dequeue_using_json");
+  Test_enqueue_dequeue_using_json("./Util/enq_dq_operations.json", sch, q);
   after();
 
   printTestingSessionResult();

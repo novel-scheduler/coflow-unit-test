@@ -6,6 +6,17 @@
 #include "./temp_types.h"
 #include "../Lib/rbtree.c"
 
+// This is to be used inside every fq_dequeue() so that we can keep a log of the order in which the packets are being dequeued.
+typedef struct dequeued_pkt_info
+{
+  struct dequeued_pkt_info *next;
+  char *flow_id;
+  char *pkt_id;
+  u32 socket_hash;
+  s64 tstamp;
+  int plen;
+} dequeued_pkt_info;
+
 #ifndef max
 #define max(x, y) ({				\
 	typeof(x) _max1 = (x);			\
@@ -84,8 +95,10 @@ struct sk_buff
   sk_buff_data_t end;
   struct net_device *dev;
 
-  // * custom field so that user can manually set packet size
-  int plen;
+  // * custom fields
+  int plen;      // user can manually set packet size
+  char *pkt_id;  // user can manually set unique packet id
+  char *flow_id; // ex) "F", "G", etc.
 
   // TODO: incomplete
 };
@@ -147,8 +160,8 @@ int barriercounter_flow[2] = {0};
 
 int dcounter = 0;
 
-// u32 pFlowid[2] = {-1, -1};
-u32 pFlowid[2] = {5, 1111}; // * changed by Heon
+u32 pFlowid[2] = {-1, -1};
+// u32 pFlowid[2] = {5, 1111}; // * changed by Heon
 // u32 pFlowid[2] = {3, 5}; // * changed by Heon
 
 int firstflag = 0;
@@ -851,7 +864,7 @@ static void fq_dequeue_skb(struct Qdisc *sch, struct fq_flow *flow, struct sk_bu
 
 // TODO: not tested yet
 // * HEON:ADD - param: struct fq_sched_data *q
-static struct sk_buff *fq_dequeue(struct Qdisc *sch, struct fq_sched_data *q)
+static struct sk_buff *fq_dequeue(struct Qdisc *sch, struct fq_sched_data *q, struct dequeued_pkt_info **dq_LL_head, struct dequeued_pkt_info **dq_LL_tail)
 {
   printf("\n*FUNC: fq_dequeue\n");
 
@@ -1045,6 +1058,35 @@ begin:
   printf("plen: %u\n", plen);
   f->credit -= plen;
   printf("AFTER plen subtraction: f->credit == %d\n", f->credit);
+
+  // * HEON:ADD - add dequeued packet info to a linked list
+  if (*dq_LL_head == NULL)
+  {
+    *dq_LL_head = (struct dequeued_pkt_info *)malloc(sizeof(dequeued_pkt_info));
+
+    (*dq_LL_head)->next = NULL;
+    (*dq_LL_head)->flow_id = skb->flow_id;
+    (*dq_LL_head)->pkt_id = skb->pkt_id;
+    (*dq_LL_head)->socket_hash = skb->sk->sk_hash;
+    (*dq_LL_head)->tstamp = skb->tstamp;
+    (*dq_LL_head)->plen = skb->plen;
+
+    *dq_LL_tail = *dq_LL_head;
+  }
+  else
+  {
+    dequeued_pkt_info *new_info = (struct dequeued_pkt_info *)malloc(sizeof(dequeued_pkt_info));
+
+    new_info->next = NULL;
+    new_info->flow_id = skb->flow_id;
+    new_info->pkt_id = skb->pkt_id;
+    new_info->socket_hash = skb->sk->sk_hash;
+    new_info->tstamp = skb->tstamp;
+    new_info->plen = skb->plen;
+
+    (*dq_LL_tail)->next = new_info;
+    *dq_LL_tail = (*dq_LL_tail)->next;
+  }
 
   // * pacing
   // if (!q->rate_enable)
