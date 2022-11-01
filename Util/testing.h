@@ -592,6 +592,9 @@ void enqueue_dequeue(char *fileName, struct Qdisc *sch, struct fq_sched_data *q,
       // * DEQUEUE packet
       struct sk_buff *skb = fq_dequeue(sch, q);
 
+      if (skb == NULL)
+        continue;
+
       // * Add dequeued packet info to a linked list
       if (*dq_LL_head == NULL)
       {

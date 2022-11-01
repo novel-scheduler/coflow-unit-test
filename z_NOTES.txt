@@ -3,24 +3,18 @@
   - can use VSCode's file diff (red + green)
   - can look at commented out code
 - need more (useful) test cases
-
-<QUESTIONS>:
-- ith I can give a custom property/member named "flowName" to struct fq_flow so that I can use this to print out flow names
-- maybe a utility func that prints the entire flows list with property details
-  - vertical direction for printing the flows, and indentations for printing out flow properties (socket_hash of the flow)
-- another utility func that prints out the entire flow, given a flow name 
-  - not sure what to print, maybe the tstamp?
+- (HEON:TODO - ... ) => search for these comment blocks to find the most recent places I've worked on
 
 <ISSUES>:
-- u32 pFlowid[2] = {-1, -1}; -> I used {5, 1111}
-  - Result: "time_next_packet: 1666137344" for one of the packets -> this is not from any of my custom tstamps
-  - Result: all flow lists are empty (even the coflows list)
-  - Q: is this due to Promotecoflows()? some weird things happen when valuePresentInArray() returns true
-
-<SUPER>:
 - 
 
-
+<QUESTIONS>:
+- unlikely(skb->sk == sk && f->socket_hash != sk->sk_hash)
+  - what exactly is unlikely? 
+  - (skb->sk == sk && f->socket_hash != sk->sk_hash):
+    - was 0, and unlikely(0) was 0 -> shouldn't it be 1?
+    - what condition is this checking exactly?
+  
 
 <make command for "json-c" library>:
 gcc main.c -I /common/home/hy368/Desktop/Research/json-c-build/  -l json-c -o main
@@ -31,12 +25,8 @@ gcc main.c -I /common/home/hy368/Desktop/Research/json-c-build/  -l json-c -o ma
 ---------------------------------------------------------------------------------
 
 
-TODO: 
+<TODO>: 
 - plfowid logic needs to be there for the new flows as well, not only the old flows (inside fq classify)
 - (pretty sure) the commented out part in fq_classify regarding pflowid needs to be uncommented for coflow logic
-- simply change the return value for the fq_dequeue so that you don't change the signiture of the fq_dequeue with dqued_info_LL 
-- testing.h:
-  - instead of manual ifelse with flow id identification for sock struct, use:
-  - packet->sk = sock_array[packet->flow_id] 
 
 

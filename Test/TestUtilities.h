@@ -151,7 +151,7 @@ int dcounter = 0;
 
 u32 pFlowid[2] = {-1, -1};
 // u32 pFlowid[2] = {5, 1111}; // * changed by Heon
-// u32 pFlowid[2] = {3, 5}; // * changed by Heon
+// u32 pFlowid[2] = {111, 333}; // * changed by Heon
 
 int firstflag = 0;
 
@@ -588,9 +588,12 @@ static struct fq_flow *fq_classify(struct sk_buff *skb, struct fq_sched_data *q)
     printf("** LOOP - while (*p)\n");
     parent = *p;
 
-    // !!!!! Don't know why it's an ERROR !!!!!
+    // get the flow
     f = rb_entry(parent, struct fq_flow, fq_node);
     printf("** LOOP - f->sk->sk_hash: %u\n", f->sk->sk_hash);
+
+    // Here, f->sk is the socket of the retrieved flow (which is initially the flow of the root rb_node in the tree), and sk is skb->sk, meaning it's the socket of the packet
+    // So basically this binary search operation is to check whether the packet being processed is from an existing (OLD, existing in the tree) flow or not. If it's a match, that means the packet belongs to a flow that already exists in the tree, hence an old flow.
     if (f->sk == sk)
     {
       printf("*** MATCH!\n");
@@ -599,6 +602,8 @@ static struct fq_flow *fq_classify(struct sk_buff *skb, struct fq_sched_data *q)
        * It not, we need to refill credit with
        * initial quantum
        */
+
+      // ! HEON:TODO - uncommented this whole block below regarding pflowid
       int lengthOfarray = 0;
 
       int i;
@@ -608,6 +613,13 @@ static struct fq_flow *fq_classify(struct sk_buff *skb, struct fq_sched_data *q)
         lengthOfarray++;
       }
 
+      printf("**1 skb->sk == sk => %d\n", skb->sk == sk);
+      printf("**1 f->socket_hash != sk->sk_hash => %d\n", f->socket_hash != sk->sk_hash);
+      printf("**1 f->socket_hash => %u\n", f->socket_hash);
+      printf("**1 sk->sk_hash => %u\n", sk->sk_hash);
+      printf("**1 unlikely => %d", unlikely(skb->sk == sk && f->socket_hash != sk->sk_hash));
+
+      // ? HEON: what is this condition?
       if (unlikely(skb->sk == sk && f->socket_hash != sk->sk_hash))
       {
         f->credit = q->initial_quantum;
