@@ -2,8 +2,12 @@
  * WIP: This is the main file that I am working on
  */
 
+#include <json-c/json.h>
+#include <json-c/json_util.h>
+
 #include <assert.h>
 #include <stdlib.h>
+#include <string.h>
 #include "../Test/TestUtilities.h"
 
 // Used for enabling logs
@@ -31,6 +35,17 @@ typedef enum
   Array,      // generic array, not really needed
   FlowList,   // same as LL, but more specific
 } DATATYPE;
+
+// This is to be used inside every fq_dequeue() so that we can keep a log of the order in which the packets are being dequeued.
+typedef struct dequeued_pkt_info
+{
+  struct dequeued_pkt_info *next;
+  int flow_id;
+  char *pkt_id;
+  u32 socket_hash;
+  s64 tstamp;
+  int plen;
+} dequeued_pkt_info;
 
 typedef struct expectObj
 {
@@ -419,4 +434,264 @@ void toEqualNumberValueOf(int number)
     return;
 
   printSingleTestPassText(currentTestNumber);
+}
+
+// ***** ENQUEUE & DEQUEUE testing function *****
+
+/**
+ * Reads from a json file and executes enqeuue & dequeue.
+ */
+void enqueue_dequeue(char *fileName, struct Qdisc *sch, struct fq_sched_data *q, struct dequeued_pkt_info **dq_LL_head, struct dequeued_pkt_info **dq_LL_tail)
+{
+  // Set up flow map
+  // struct json_object *flow_map = json_object_new_object();
+
+  // struct json_object *flow_F_socket_hash = json_object_new_int64(1);
+  // json_object_object_add(flow_map, "F", flow_F_socket_hash);
+
+  // struct json_object *flow_G_socket_hash = json_object_new_int64(2);
+  // json_object_object_add(flow_map, "G", flow_G_socket_hash);
+
+  // struct json_object *flow_H_socket_hash = json_object_new_int64(3);
+  // json_object_object_add(flow_map, "H", flow_H_socket_hash);
+
+  // struct json_object *flow_K_socket_hash = json_object_new_int64(4);
+  // json_object_object_add(flow_map, "K", flow_K_socket_hash);
+
+  // Create sockets for each flow
+  // (remember: sk_hash is used for rb_tree hashing, and sock itself is used for unique identification of flows)
+  struct sock *f_sock = (struct sock *)malloc(sizeof(struct sock));
+  f_sock->sk_hash = 111;
+  struct sock *g_sock = (struct sock *)malloc(sizeof(struct sock));
+  g_sock->sk_hash = 222;
+  struct sock *h_sock = (struct sock *)malloc(sizeof(struct sock));
+  h_sock->sk_hash = 333;
+  struct sock *k_sock = (struct sock *)malloc(sizeof(struct sock));
+  k_sock->sk_hash = 444;
+
+  struct sock **sock_array = malloc(sizeof(struct sock *) * 4);
+  sock_array[0] = f_sock;
+  sock_array[1] = g_sock;
+  sock_array[2] = h_sock;
+  sock_array[3] = k_sock;
+
+  printf("** YOOO sock_array[0]->sk_hash: %d\n", sock_array[0]->sk_hash);
+  printf("** YOOO sock_array[3]->sk_hash: %d\n", sock_array[3]->sk_hash);
+
+  // json_object_to_file("test-creation.json", flow_map);
+
+  // Read the enqueue/dequeue operations from JSON file
+  FILE *
+      fp;
+  char buffer[4096 * 100];
+
+  fp = fopen(fileName, "r");
+  fread(buffer, 4096 * 100, 1, fp);
+  fclose(fp);
+
+  struct json_object *parsed_json;
+
+  struct json_object *operations;
+
+  struct json_object *operation;
+  struct json_object *operation_type;
+  struct json_object *operation_flow_id;
+  struct json_object *operation_pkt_id;
+  struct json_object *operation_pkt_len;
+  struct json_object *operation_pkt_tstamp;
+
+  char *operation_type_str;
+  int operation_flow_id_int;
+  char *operation_pkt_id_str;
+  int operation_pkt_len_int;
+  int64_t operation_pkt_tstamp_int;
+
+  parsed_json = json_tokener_parse(buffer);
+
+  // This could fail if buffer is not large enough (failed on 1024)
+  json_object_object_get_ex(parsed_json, "operations", &operations);
+
+  // printf("BEFORE: num operation log\n");
+  // char *type = json_type_to_name(json_object_get_type(operations));
+  // printf("type => %s\n", type);
+
+  size_t num_operations = json_object_array_length(operations);
+  printf("*** Number of operations: %lu ***\n\n", num_operations);
+
+  // Validate the number of enqueues/dequeues
+  // ex) if the order is EE DDD E, it is INVALID, because dequeue happens one more time than the number of enqueues at a certain point
+  int balance_counter = 0;
+  for (size_t i = 0; i < num_operations; i++)
+  {
+    operation = json_object_array_get_idx(operations, i);
+    json_object_object_get_ex(operation, "operation", &operation_type);
+    operation_type_str = json_object_get_string(operation_type);
+
+    if (strcmp(operation_type_str, "ENQUEUE") == 0)
+    {
+      balance_counter++;
+    }
+    else if (strcmp(operation_type_str, "DEQUEUE") == 0)
+    {
+      balance_counter--;
+      if (balance_counter < 0)
+      {
+        printf("ERROR: Invalid Order Of Operations\n");
+        return;
+      }
+    }
+  }
+
+  // printf("AFTER: num operation log\n");
+  // printf("\n");
+  for (size_t i = 0; i < num_operations; i++)
+  {
+    operation = json_object_array_get_idx(operations, i);
+
+    // Get values from each packet obj
+    json_object_object_get_ex(operation, "operation", &operation_type);
+    json_object_object_get_ex(operation, "flow_id", &operation_flow_id);
+    json_object_object_get_ex(operation, "pkt_id", &operation_pkt_id);
+    json_object_object_get_ex(operation, "plen", &operation_pkt_len);
+    json_object_object_get_ex(operation, "tstamp", &operation_pkt_tstamp);
+
+    operation_type_str = json_object_get_string(operation_type);
+    printf("\n\n********** operation_type => %s **********\n", operation_type_str);
+
+    struct sk_buff *to_free = (struct sk_buff *)malloc(sizeof(struct sk_buff));
+
+    if (strcmp(operation_type_str, "ENQUEUE") == 0)
+    {
+      operation_flow_id_int = json_object_get_int(operation_flow_id);
+      operation_pkt_id_str = json_object_get_string(operation_pkt_id);
+      operation_pkt_len_int = json_object_get_int(operation_pkt_len);
+      operation_pkt_tstamp_int = json_object_get_int(operation_pkt_tstamp);
+
+      printf("operation_flow_id => %d\n", operation_flow_id_int);
+      printf("operation_pkt_id => %s\n", operation_pkt_id_str);
+      printf("operation_pkt_len => %d\n", operation_pkt_len_int);
+      printf("operation_pkt_tstamp => %d\n", operation_pkt_tstamp_int);
+
+      // construct packet
+      struct sk_buff *packet = (struct sk_buff *)malloc(sizeof(struct sk_buff));
+      packet->flow_id = operation_flow_id_int;
+      packet->pkt_id = operation_pkt_id_str;
+      packet->plen = operation_pkt_len_int;
+      packet->tstamp = operation_pkt_tstamp_int;
+
+      packet->sk = sock_array[packet->flow_id];
+
+      printf("packet sk_hash => %u\n", packet->sk->sk_hash);
+      printf("\n");
+
+      // * ENQUEUE packet
+      fq_enqueue(q, packet, sch, &to_free);
+    } // END IF OPERATION == "ENQUEUE"
+    else
+    {
+      // * DEQUEUE packet
+      struct sk_buff *skb = fq_dequeue(sch, q);
+
+      if (skb == NULL)
+        continue;
+
+      // * Add dequeued packet info to a linked list
+      if (*dq_LL_head == NULL)
+      {
+        *dq_LL_head = (struct dequeued_pkt_info *)malloc(sizeof(dequeued_pkt_info));
+
+        (*dq_LL_head)->next = NULL;
+        (*dq_LL_head)->flow_id = skb->flow_id;
+        (*dq_LL_head)->pkt_id = skb->pkt_id;
+        (*dq_LL_head)->socket_hash = skb->sk->sk_hash;
+        (*dq_LL_head)->tstamp = skb->tstamp;
+        (*dq_LL_head)->plen = skb->plen;
+
+        *dq_LL_tail = *dq_LL_head;
+      }
+      else
+      {
+        dequeued_pkt_info *new_info = (struct dequeued_pkt_info *)malloc(sizeof(dequeued_pkt_info));
+
+        new_info->next = NULL;
+        new_info->flow_id = skb->flow_id;
+        new_info->pkt_id = skb->pkt_id;
+        new_info->socket_hash = skb->sk->sk_hash;
+        new_info->tstamp = skb->tstamp;
+        new_info->plen = skb->plen;
+
+        (*dq_LL_tail)->next = new_info;
+        *dq_LL_tail = (*dq_LL_tail)->next;
+      }
+    } // END OF OPERATION == "DEQUEUE"
+  }
+}
+
+// Test creating a new json obj and writing to file
+void test_json_creation()
+{
+  // struct json_object *obj = json_object_new_object();
+  // struct json_object *val = json_object_new_string("NEW STRING");
+  // json_object_object_add(obj, "key1", val);
+
+  struct json_object *flow_map = json_object_new_object();
+  struct json_object *flow_F_socket_hash = json_object_new_string("1");
+  json_object_object_add(flow_map, "F", flow_F_socket_hash);
+
+  // from json_util.h
+  json_object_to_file("test-creation.json", flow_map);
+}
+
+int getDequeuedInfoListLength(struct dequeued_pkt_info *listHead)
+{
+  struct dequeued_pkt_info *ptr = listHead;
+
+  int listLength = 0;
+  while (ptr != NULL)
+  {
+    listLength++;
+    ptr = ptr->next;
+  }
+
+  return listLength;
+}
+
+void printDequeuedInfoList(struct dequeued_pkt_info *listHead)
+{
+  struct dequeued_pkt_info *ptr = listHead;
+  int index = 1;
+
+  char *indentationWithVerticalLine = " |    ";
+  char *plainIndentation = "      ";
+
+  char *emptyLinewithVerticalLine = " |\n";
+  char *plainEmptyLine = "\n";
+
+  printf("\n***** Printing Dequeued Packets Info List *****\n\n");
+  while (ptr != NULL)
+  {
+    char *indentation;
+    char *emptyLine;
+
+    if (ptr->next != NULL)
+    {
+      indentation = indentationWithVerticalLine;
+      emptyLine = emptyLinewithVerticalLine;
+    }
+    else
+    {
+      indentation = plainIndentation;
+      emptyLine = plainEmptyLine;
+    }
+
+    printf("[%d] Flow %d\n", index++, ptr->flow_id);
+    printf("%s- socket_hash: %u\n", indentation, ptr->socket_hash);
+    printf("%s- packet id: %s\n", indentation, ptr->pkt_id);
+    printf("%s- packet tstamp: %d\n", indentation, ptr->tstamp);
+    printf("%s- packet len: %d\n", indentation, ptr->plen);
+    printf("%s", emptyLine);
+    ptr = ptr->next;
+  }
+
+  printf("*******************************\n\n");
 }

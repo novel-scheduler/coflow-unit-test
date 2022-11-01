@@ -1,0 +1,66 @@
+{
+  "operations": [
+    {
+      "operation": "ENQUEUE",
+      "flow_id": 0,
+      "pkt_id": "f1",
+      "plen": 100000,
+      "tstamp": 1
+    },
+    {
+      "operation": "ENQUEUE",
+      "flow_id": 0,
+      "pkt_id": "f2",
+      "plen": 50000,
+      "tstamp": 4
+    },
+    {
+      "operation": "ENQUEUE",
+      "flow_id": 1,
+      "pkt_id": "g1",
+      "plen": 50000,
+      "tstamp": 2
+    },
+    {
+      "operation": "ENQUEUE",
+      "flow_id": 2,
+      "pkt_id": "h1",
+      "plen": 50000,
+      "tstamp": 3
+    },
+    {
+      "operation": "ENQUEUE",
+      "flow_id": 2,
+      "pkt_id": "h2",
+      "plen": 50000,
+      "tstamp": 5
+    },
+
+    {
+      "operation": "ENQUEUE",
+      "flow_id": 3,
+      "pkt_id": "k1",
+      "plen": 50000,
+      "tstamp": 6
+    },
+
+    {
+      "operation": "DEQUEUE"
+    },
+    {
+      "operation": "DEQUEUE"
+    },
+    {
+      "operation": "DEQUEUE"
+    },
+    {
+      "operation": "DEQUEUE"
+    },
+    {
+      "operation": "DEQUEUE"
+    },
+    {
+      "operation": "DEQUEUE"
+    }
+  ]
+}

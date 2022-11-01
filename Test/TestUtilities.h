@@ -84,8 +84,10 @@ struct sk_buff
   sk_buff_data_t end;
   struct net_device *dev;
 
-  // * custom field so that user can manually set packet size
-  int plen;
+  // * custom fields
+  int plen;     // user can manually set packet size
+  char *pkt_id; // user can manually set unique packet id
+  int flow_id;  // ex) 0, 1, 2, etc.
 
   // TODO: incomplete
 };
@@ -147,9 +149,9 @@ int barriercounter_flow[2] = {0};
 
 int dcounter = 0;
 
-// u32 pFlowid[2] = {-1, -1};
-u32 pFlowid[2] = {5, 1111}; // * changed by Heon
-// u32 pFlowid[2] = {3, 5}; // * changed by Heon
+u32 pFlowid[2] = {-1, -1};
+// u32 pFlowid[2] = {5, 1111}; // * changed by Heon
+// u32 pFlowid[2] = {111, 333}; // * changed by Heon
 
 int firstflag = 0;
 
@@ -586,9 +588,12 @@ static struct fq_flow *fq_classify(struct sk_buff *skb, struct fq_sched_data *q)
     printf("** LOOP - while (*p)\n");
     parent = *p;
 
-    // !!!!! Don't know why it's an ERROR !!!!!
+    // get the flow
     f = rb_entry(parent, struct fq_flow, fq_node);
     printf("** LOOP - f->sk->sk_hash: %u\n", f->sk->sk_hash);
+
+    // Here, f->sk is the socket of the retrieved flow (which is initially the flow of the root rb_node in the tree), and sk is skb->sk, meaning it's the socket of the packet
+    // So basically this binary search operation is to check whether the packet being processed is from an existing (OLD, existing in the tree) flow or not. If it's a match, that means the packet belongs to a flow that already exists in the tree, hence an old flow.
     if (f->sk == sk)
     {
       printf("*** MATCH!\n");
@@ -597,57 +602,65 @@ static struct fq_flow *fq_classify(struct sk_buff *skb, struct fq_sched_data *q)
        * It not, we need to refill credit with
        * initial quantum
        */
-      // int lengthOfarray = 0;
 
-      // int i;
+      // ! HEON:TODO - uncommented this whole block below regarding pflowid
+      int lengthOfarray = 0;
 
-      // for (i = 0; i < (sizeof(pFlowid) / sizeof(pFlowid[0])); i++)
-      // {
-      //   lengthOfarray++;
-      // }
+      int i;
 
-      // if (unlikely(skb->sk == sk && f->socket_hash != sk->sk_hash))
-      // {
-      //   f->credit = q->initial_quantum;
-      //   f->socket_hash = sk->sk_hash;
-      //   // printk("flow hash in rb tree value of each flow is  : %u \n
-      //   // ",f->socket_hash );
-      //   if ((pFlowid[0] == -1) && (pFlowid[1] == -1))
-      //   {
-      //     pFlowid[0] = f->socket_hash;
-      //     printk(
-      //         "flow pflowid 0 hash in rb tree value of each flow is  : %u \n ",
-      //         pFlowid[0]);
-      //     if (pFlowid[0] == 0)
-      //     {
-      //       resetFlowid(pFlowid, lengthOfarray);
-      //     }
-      //   }
+      for (i = 0; i < (sizeof(pFlowid) / sizeof(pFlowid[0])); i++)
+      {
+        lengthOfarray++;
+      }
 
-      //   if ((pFlowid[0] != -1) && (pFlowid[1] == -1))
-      //   {
-      //     int lVal =
-      //         valuePresentInArray(f->socket_hash, pFlowid, lengthOfarray);
+      printf("**1 skb->sk == sk => %d\n", skb->sk == sk);
+      printf("**1 f->socket_hash != sk->sk_hash => %d\n", f->socket_hash != sk->sk_hash);
+      printf("**1 f->socket_hash => %u\n", f->socket_hash);
+      printf("**1 sk->sk_hash => %u\n", sk->sk_hash);
+      printf("**1 unlikely => %d", unlikely(skb->sk == sk && f->socket_hash != sk->sk_hash));
 
-      //     if (pFlowid[0] != f->socket_hash)
-      //       pFlowid[1] = f->socket_hash;
+      // ? HEON: what is this condition?
+      if (unlikely(skb->sk == sk && f->socket_hash != sk->sk_hash))
+      {
+        f->credit = q->initial_quantum;
+        f->socket_hash = sk->sk_hash;
+        // printk("flow hash in rb tree value of each flow is  : %u \n
+        // ",f->socket_hash );
+        if ((pFlowid[0] == -1) && (pFlowid[1] == -1))
+        {
+          pFlowid[0] = f->socket_hash;
 
-      //     printk(
-      //         "flow pflowid 1 hash in rb tree value of each flow is  : %u \n ",
-      //         pFlowid[1]);
+          printf("flow pflowid 1 hash in rb tree value of each flow : %u\n ", pFlowid[1]);
 
-      //     if ((pFlowid[1] == 0))
-      //     {
-      //       resetFlowid(pFlowid, lengthOfarray);
-      //     }
-      //   }
+          if (pFlowid[0] == 0)
+          {
+            resetFlowid(pFlowid, lengthOfarray);
+          }
+        }
 
-      //   if (q->rate_enable)
-      //     smp_store_release(&sk->sk_pacing_status, SK_PACING_FQ);
-      //   if (fq_flow_is_throttled(f))
-      //     fq_flow_unset_throttled(q, f);
-      //   f->time_next_packet = 0ULL;
-      // }
+        if ((pFlowid[0] != -1) && (pFlowid[1] == -1))
+        {
+          int lVal =
+              valuePresentInArray(f->socket_hash, pFlowid, lengthOfarray);
+
+          if (pFlowid[0] != f->socket_hash)
+            pFlowid[1] = f->socket_hash;
+
+          printf("flow pflowid 1 hash in rb tree value of each flow : %u\n ", pFlowid[1]);
+
+          if ((pFlowid[1] == 0))
+          {
+            resetFlowid(pFlowid, lengthOfarray);
+          }
+        }
+
+        // if (q->rate_enable)
+        //   smp_store_release(&sk->sk_pacing_status, SK_PACING_FQ);
+        // if (fq_flow_is_throttled(f))
+        //   fq_flow_unset_throttled(q, f);
+        // f->time_next_packet = 0ULL;
+      }
+
       return f;
     }
     if (f->sk > sk)
