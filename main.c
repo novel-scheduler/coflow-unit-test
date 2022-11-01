@@ -455,12 +455,12 @@ void Test2_fq_dequeue(struct Qdisc *sch, struct fq_sched_data *q)
   struct dequeued_pkt_info *dequeued_pkts_LL_head = NULL;
   struct dequeued_pkt_info *dequeued_pkts_LL_tail = NULL;
 
-  fq_dequeue(sch, q, &dequeued_pkts_LL_head, &dequeued_pkts_LL_tail);
-  fq_dequeue(sch, q, &dequeued_pkts_LL_head, &dequeued_pkts_LL_tail);
-  fq_dequeue(sch, q, &dequeued_pkts_LL_head, &dequeued_pkts_LL_tail);
-  fq_dequeue(sch, q, &dequeued_pkts_LL_head, &dequeued_pkts_LL_tail);
-  fq_dequeue(sch, q, &dequeued_pkts_LL_head, &dequeued_pkts_LL_tail);
-  fq_dequeue(sch, q, &dequeued_pkts_LL_head, &dequeued_pkts_LL_tail);
+  fq_dequeue(sch, q);
+  fq_dequeue(sch, q);
+  fq_dequeue(sch, q);
+  fq_dequeue(sch, q);
+  fq_dequeue(sch, q);
+  fq_dequeue(sch, q);
 
   printf("\n----- AFTER Dequeue -----\n\n");
 

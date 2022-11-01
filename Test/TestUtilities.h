@@ -6,17 +6,6 @@
 #include "./temp_types.h"
 #include "../Lib/rbtree.c"
 
-// This is to be used inside every fq_dequeue() so that we can keep a log of the order in which the packets are being dequeued.
-typedef struct dequeued_pkt_info
-{
-  struct dequeued_pkt_info *next;
-  char *flow_id;
-  char *pkt_id;
-  u32 socket_hash;
-  s64 tstamp;
-  int plen;
-} dequeued_pkt_info;
-
 #ifndef max
 #define max(x, y) ({				\
 	typeof(x) _max1 = (x);			\
@@ -96,9 +85,9 @@ struct sk_buff
   struct net_device *dev;
 
   // * custom fields
-  int plen;      // user can manually set packet size
-  char *pkt_id;  // user can manually set unique packet id
-  char *flow_id; // ex) "F", "G", etc.
+  int plen;     // user can manually set packet size
+  char *pkt_id; // user can manually set unique packet id
+  int flow_id;  // ex) 0, 1, 2, etc.
 
   // TODO: incomplete
 };
@@ -610,57 +599,56 @@ static struct fq_flow *fq_classify(struct sk_buff *skb, struct fq_sched_data *q)
        * It not, we need to refill credit with
        * initial quantum
        */
-      // int lengthOfarray = 0;
+      int lengthOfarray = 0;
 
-      // int i;
+      int i;
 
-      // for (i = 0; i < (sizeof(pFlowid) / sizeof(pFlowid[0])); i++)
-      // {
-      //   lengthOfarray++;
-      // }
+      for (i = 0; i < (sizeof(pFlowid) / sizeof(pFlowid[0])); i++)
+      {
+        lengthOfarray++;
+      }
 
-      // if (unlikely(skb->sk == sk && f->socket_hash != sk->sk_hash))
-      // {
-      //   f->credit = q->initial_quantum;
-      //   f->socket_hash = sk->sk_hash;
-      //   // printk("flow hash in rb tree value of each flow is  : %u \n
-      //   // ",f->socket_hash );
-      //   if ((pFlowid[0] == -1) && (pFlowid[1] == -1))
-      //   {
-      //     pFlowid[0] = f->socket_hash;
-      //     printk(
-      //         "flow pflowid 0 hash in rb tree value of each flow is  : %u \n ",
-      //         pFlowid[0]);
-      //     if (pFlowid[0] == 0)
-      //     {
-      //       resetFlowid(pFlowid, lengthOfarray);
-      //     }
-      //   }
+      if (unlikely(skb->sk == sk && f->socket_hash != sk->sk_hash))
+      {
+        f->credit = q->initial_quantum;
+        f->socket_hash = sk->sk_hash;
+        // printk("flow hash in rb tree value of each flow is  : %u \n
+        // ",f->socket_hash );
+        if ((pFlowid[0] == -1) && (pFlowid[1] == -1))
+        {
+          pFlowid[0] = f->socket_hash;
 
-      //   if ((pFlowid[0] != -1) && (pFlowid[1] == -1))
-      //   {
-      //     int lVal =
-      //         valuePresentInArray(f->socket_hash, pFlowid, lengthOfarray);
+          printf("flow pflowid 1 hash in rb tree value of each flow : %u\n ", pFlowid[1]);
 
-      //     if (pFlowid[0] != f->socket_hash)
-      //       pFlowid[1] = f->socket_hash;
+          if (pFlowid[0] == 0)
+          {
+            resetFlowid(pFlowid, lengthOfarray);
+          }
+        }
 
-      //     printk(
-      //         "flow pflowid 1 hash in rb tree value of each flow is  : %u \n ",
-      //         pFlowid[1]);
+        if ((pFlowid[0] != -1) && (pFlowid[1] == -1))
+        {
+          int lVal =
+              valuePresentInArray(f->socket_hash, pFlowid, lengthOfarray);
 
-      //     if ((pFlowid[1] == 0))
-      //     {
-      //       resetFlowid(pFlowid, lengthOfarray);
-      //     }
-      //   }
+          if (pFlowid[0] != f->socket_hash)
+            pFlowid[1] = f->socket_hash;
 
-      //   if (q->rate_enable)
-      //     smp_store_release(&sk->sk_pacing_status, SK_PACING_FQ);
-      //   if (fq_flow_is_throttled(f))
-      //     fq_flow_unset_throttled(q, f);
-      //   f->time_next_packet = 0ULL;
-      // }
+          printf("flow pflowid 1 hash in rb tree value of each flow : %u\n ", pFlowid[1]);
+
+          if ((pFlowid[1] == 0))
+          {
+            resetFlowid(pFlowid, lengthOfarray);
+          }
+        }
+
+        // if (q->rate_enable)
+        //   smp_store_release(&sk->sk_pacing_status, SK_PACING_FQ);
+        // if (fq_flow_is_throttled(f))
+        //   fq_flow_unset_throttled(q, f);
+        // f->time_next_packet = 0ULL;
+      }
+
       return f;
     }
     if (f->sk > sk)
@@ -864,7 +852,7 @@ static void fq_dequeue_skb(struct Qdisc *sch, struct fq_flow *flow, struct sk_bu
 
 // TODO: not tested yet
 // * HEON:ADD - param: struct fq_sched_data *q
-static struct sk_buff *fq_dequeue(struct Qdisc *sch, struct fq_sched_data *q, struct dequeued_pkt_info **dq_LL_head, struct dequeued_pkt_info **dq_LL_tail)
+static struct sk_buff *fq_dequeue(struct Qdisc *sch, struct fq_sched_data *q)
 {
   printf("\n*FUNC: fq_dequeue\n");
 
@@ -1058,35 +1046,6 @@ begin:
   printf("plen: %u\n", plen);
   f->credit -= plen;
   printf("AFTER plen subtraction: f->credit == %d\n", f->credit);
-
-  // * HEON:ADD - add dequeued packet info to a linked list
-  if (*dq_LL_head == NULL)
-  {
-    *dq_LL_head = (struct dequeued_pkt_info *)malloc(sizeof(dequeued_pkt_info));
-
-    (*dq_LL_head)->next = NULL;
-    (*dq_LL_head)->flow_id = skb->flow_id;
-    (*dq_LL_head)->pkt_id = skb->pkt_id;
-    (*dq_LL_head)->socket_hash = skb->sk->sk_hash;
-    (*dq_LL_head)->tstamp = skb->tstamp;
-    (*dq_LL_head)->plen = skb->plen;
-
-    *dq_LL_tail = *dq_LL_head;
-  }
-  else
-  {
-    dequeued_pkt_info *new_info = (struct dequeued_pkt_info *)malloc(sizeof(dequeued_pkt_info));
-
-    new_info->next = NULL;
-    new_info->flow_id = skb->flow_id;
-    new_info->pkt_id = skb->pkt_id;
-    new_info->socket_hash = skb->sk->sk_hash;
-    new_info->tstamp = skb->tstamp;
-    new_info->plen = skb->plen;
-
-    (*dq_LL_tail)->next = new_info;
-    *dq_LL_tail = (*dq_LL_tail)->next;
-  }
 
   // * pacing
   // if (!q->rate_enable)

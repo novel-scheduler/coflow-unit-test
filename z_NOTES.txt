@@ -24,3 +24,19 @@
 
 <make command for "json-c" library>:
 gcc main.c -I /common/home/hy368/Desktop/Research/json-c-build/  -l json-c -o main
+
+
+
+
+---------------------------------------------------------------------------------
+
+
+TODO: 
+- plfowid logic needs to be there for the new flows as well, not only the old flows (inside fq classify)
+- (pretty sure) the commented out part in fq_classify regarding pflowid needs to be uncommented for coflow logic
+- simply change the return value for the fq_dequeue so that you don't change the signiture of the fq_dequeue with dqued_info_LL 
+- testing.h:
+  - instead of manual ifelse with flow id identification for sock struct, use:
+  - packet->sk = sock_array[packet->flow_id] 
+
+
