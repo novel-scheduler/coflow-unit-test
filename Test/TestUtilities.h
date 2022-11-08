@@ -377,7 +377,7 @@ loop:
     {
 
     loop3:
-       printf("promotion completed \n");
+      printf("promotion completed \n");
       return 1;
     }
   }
@@ -964,12 +964,12 @@ begin:
   {
     printf("*** Coflow BREACH! -> promoting coflows\n");
     barrier[dcounter] = 0;
-    //head->first = f->next;
-    // printk("adding all co-flows together \n");
+    // head->first = f->next;
+    //  printk("adding all co-flows together \n");
     Promotecoflows(&q->old_flows, &q->new_flows, &q->co_flows, f, coflow,
                    pFlowid, lengthOfarray);
-        printf("promoting co-flows goto begin\n");           
-        goto begin;            
+    printf("promoting co-flows goto begin\n");
+    goto begin;
   }
 
   // * prepare for next set of flows/packets
@@ -1051,6 +1051,18 @@ begin:
       fq_flow_set_detached(f);
       q->inactive_flows++;
     }
+
+    if ((head == &q->co_flows) && q->new_flows.first)
+    {
+      printf("MOVING: CO flow to NEW flow && going back to BEGIN due to NO PACKETS\n\n");
+      fq_flow_add_tail(&q->old_flows, f);
+    }
+    else
+    {
+      fq_flow_set_detached(f);
+      q->inactive_flows++;
+    }
+
     goto begin;
   }
 
@@ -1188,35 +1200,34 @@ static int fq_enqueue(struct fq_sched_data *q, struct sk_buff *skb, struct Qdisc
   if (fq_flow_is_detached(f))
   {
     fq_flow_add_tail(&q->new_flows, f);
-    
-       int lengthOfarray = 0;
 
-       int i;
+    int lengthOfarray = 0;
 
-      for (i = 0; i < (sizeof(pFlowid) / sizeof(pFlowid[0])); i++)
-      {
-        lengthOfarray++;
-      }   
-      
-             if ((pFlowid[0] == -1) && (pFlowid[1] == -1))
-        {
-          pFlowid[0] = f->socket_hash;
-          printf(
-              "flow pflowid 0 hash in rb tree value of each flow is  : %u \n ",
-              pFlowid[0]);
+    int i;
 
-        }
+    for (i = 0; i < (sizeof(pFlowid) / sizeof(pFlowid[0])); i++)
+    {
+      lengthOfarray++;
+    }
 
-        if ((pFlowid[0] != -1) && (pFlowid[1] == -1))
-        {
+    if ((pFlowid[0] == -1) && (pFlowid[1] == -1))
+    {
+      pFlowid[0] = f->socket_hash;
+      printf(
+          "flow pflowid 0 hash in rb tree value of each flow is  : %u \n ",
+          pFlowid[0]);
+    }
 
-          if (pFlowid[0] != f->socket_hash)
-            pFlowid[1] = f->socket_hash;
+    if ((pFlowid[0] != -1) && (pFlowid[1] == -1))
+    {
 
-          printf(
-              "flow pflowid 1 hash in rb tree value of each flow is  : %u \n ",
-              pFlowid[1]);
-        }
+      if (pFlowid[0] != f->socket_hash)
+        pFlowid[1] = f->socket_hash;
+
+      printf(
+          "flow pflowid 1 hash in rb tree value of each flow is  : %u \n ",
+          pFlowid[1]);
+    }
 
     if (time_after(100, f->age + q->flow_refill_delay))
       f->credit = max_t(u32, f->credit, q->quantum);
@@ -1233,10 +1244,10 @@ static int fq_enqueue(struct fq_sched_data *q, struct sk_buff *skb, struct Qdisc
 
   // * fq_classify identifies the flow itself
   // * flow_queue_add identifies which flow the packet belongs to
-  
+
   pFlowid[0] = 111;
   pFlowid[1] = 444;
-  
+
   flow_queue_add(f, skb);
 
   printf("\n* BEFORE: coflow logic\n");
@@ -1267,7 +1278,7 @@ static int fq_enqueue(struct fq_sched_data *q, struct sk_buff *skb, struct Qdisc
     barrier[barriercounter_flow[pValue]] =
         barrier[barriercounter_flow[pValue]] | 1 << pValue;
 
-     fq_skb_cb(skb)->time_to_send = skb->tstamp;
+    fq_skb_cb(skb)->time_to_send = skb->tstamp;
 
     barriercounter_flow[pValue]++;
   }
