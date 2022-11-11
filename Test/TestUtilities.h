@@ -149,11 +149,84 @@ int barriercounter_flow[coFlows] = {0};
 
 int dcounter = 0;
 
+int get_num_coflow_ids(char *fileName)
+{
+  // Read the coflow ids from JSON
+  FILE *fp;
+  char buffer[4096 * 100];
+
+  fp = fopen(fileName, "r");
+  fread(buffer, 4096 * 100, 1, fp);
+  fclose(fp);
+
+  struct json_object *parsed_json;
+
+  struct json_object *coflow_id_objects_array;
+
+  parsed_json = json_tokener_parse(buffer);
+
+  // This could fail if buffer is not large enough (failed on 1024)
+  json_object_object_get_ex(parsed_json, "coflow_ids", &coflow_id_objects_array);
+
+  size_t num_coflow_ids = json_object_array_length(coflow_id_objects_array);
+
+  return (int)num_coflow_ids;
+}
+
+u32 *get_coflow_ids(char *fileName)
+{
+  // printf("* FUNC: get_coflow_ids\n");
+  // Read the coflow ids from JSON
+  FILE *fp;
+  char buffer[4096 * 100];
+
+  // printf("BEFORE: fopen\n");
+  // printf("FileName: %s\n", fileName);
+
+  fp = fopen(fileName, "r");
+  fread(buffer, 4096 * 100, 1, fp);
+  fclose(fp);
+
+  struct json_object *parsed_json;
+
+  struct json_object *coflow_id_objects_array;
+
+  struct json_object *coflow_id_object;
+
+  struct json_object *coflow_id;
+
+  u32 coflow_id_int;
+
+  parsed_json = json_tokener_parse(buffer);
+
+  // This could fail if buffer is not large enough (failed on 1024)
+  json_object_object_get_ex(parsed_json, "coflow_ids", &coflow_id_objects_array);
+
+  size_t num_coflow_ids = json_object_array_length(coflow_id_objects_array);
+  // printf("*** Number of coflow ids: %lu ***\n\n", num_coflow_ids);
+
+  // Initialize coflow ids array (pFlowid array in TestUtilities.h)
+  u32 *coflow_ids_array = (u32 *)malloc(num_coflow_ids * sizeof(u32));
+
+  for (size_t i = 0; i < num_coflow_ids; i++)
+  {
+    coflow_id_object = json_object_array_get_idx(coflow_id_objects_array, i);
+
+    json_object_object_get_ex(coflow_id_object, "id", &coflow_id);
+
+    coflow_id_int = json_object_get_int(coflow_id);
+
+    coflow_ids_array[i] = coflow_id_int;
+  }
+
+  // printf("* END-FUNC: get_coflow_ids\n");
+
+  return coflow_ids_array;
+}
+
+// pFlowid will be populated from JSON input in fq_init()
 u32 pFlowid[coFlows] = {-1};
-
-
-// u32 pFlowid[2] = {5, 1111}; // * changed by Heon
-// u32 pFlowid[2] = {111, 333}; // * changed by Heon
+// u32 pFlowid[coFlows] = {111, 444, 333}; // * changed by Heon
 
 int firstflag = 0;
 
@@ -772,6 +845,19 @@ static struct fq_sched_data *fq_init()
   q->orphan_mask = 1024 - 1;
   q->low_rate_threshold = 550000 / 8;
 
+  // * HEON:ADD - configure pFlowid array
+  u32 *coflow_ids_array = get_coflow_ids("./Util/coflow_ids.json");
+  // coFlows is a MACRO that holds predefined number of coflow ids -> in the JSON file of coflow ids, the number of coflow ids should match this MACRO value
+  // ? not sure if there's a way to overcome this two-source-of-truth problem (is there a way to avoid using the MACRO?)
+  for (int i = 0; i < coFlows; i++)
+  {
+    pFlowid[i] = coflow_ids_array[i];
+  }
+  // for (int i = 0; i < coFlows; i++)
+  // {
+  //   printf("* COFLOW ID => %u\n", pFlowid[i]);
+  // }
+
   return q;
 }
 
@@ -851,12 +937,11 @@ static struct sk_buff *fq_dequeue(struct Qdisc *sch, struct fq_sched_data *q)
   int lengthOfarray = 0;
   int i;
 
-  
   for (i = 0; i < (sizeof(pFlowid) / sizeof(pFlowid[0])); i++)
   {
     lengthOfarray++;
   }
-  
+
   int flag[lengthOfarray];
 
   for (i = 0; i < lengthOfarray; i++)
@@ -923,8 +1008,8 @@ begin:
       flag[rValue] = 1;
     }
   }
-  
-  int barriervalue = ipow(2, lengthOfarray) -1;
+
+  int barriervalue = ipow(2, lengthOfarray) - 1;
 
   // printk("rValue is   : %d \n ", rValue);
 
@@ -1106,21 +1191,20 @@ out:
   return skb;
 }
 
-
 int ipow(int base, int exp)
 {
-    int result = 1;
-    for (;;)
-    {
-        if (exp & 1)
-            result *= base;
-        exp >>= 1;
-        if (!exp)
-            break;
-        base *= base;
-    }
+  int result = 1;
+  for (;;)
+  {
+    if (exp & 1)
+      result *= base;
+    exp >>= 1;
+    if (!exp)
+      break;
+    base *= base;
+  }
 
-    return result;
+  return result;
 }
 
 // * need a dummy skb & sch
@@ -1190,34 +1274,34 @@ static int fq_enqueue(struct fq_sched_data *q, struct sk_buff *skb, struct Qdisc
   {
     fq_flow_add_tail(&q->new_flows, f);
 
-/*    int lengthOfarray = 0;
+    /*    int lengthOfarray = 0;
 
-    int i;
+        int i;
 
-    for (i = 0; i < (sizeof(pFlowid) / sizeof(pFlowid[0])); i++)
-    {
-      lengthOfarray++;
-    }
+        for (i = 0; i < (sizeof(pFlowid) / sizeof(pFlowid[0])); i++)
+        {
+          lengthOfarray++;
+        }
 
-    if ((pFlowid[0] == -1) && (pFlowid[1] == -1))
-    {
-      pFlowid[0] = f->socket_hash;
-      printf(
-          "flow pflowid 0 hash in rb tree value of each flow is  : %u \n ",
-          pFlowid[0]);
-    }
+        if ((pFlowid[0] == -1) && (pFlowid[1] == -1))
+        {
+          pFlowid[0] = f->socket_hash;
+          printf(
+              "flow pflowid 0 hash in rb tree value of each flow is  : %u \n ",
+              pFlowid[0]);
+        }
 
-    if ((pFlowid[0] != -1) && (pFlowid[1] == -1))
-    {
+        if ((pFlowid[0] != -1) && (pFlowid[1] == -1))
+        {
 
-      if (pFlowid[0] != f->socket_hash)
-        pFlowid[1] = f->socket_hash;
+          if (pFlowid[0] != f->socket_hash)
+            pFlowid[1] = f->socket_hash;
 
-      printf(
-          "flow pflowid 1 hash in rb tree value of each flow is  : %u \n ",
-          pFlowid[1]);
-    }
-    */
+          printf(
+              "flow pflowid 1 hash in rb tree value of each flow is  : %u \n ",
+              pFlowid[1]);
+        }
+        */
 
     if (time_after(100, f->age + q->flow_refill_delay))
       f->credit = max_t(u32, f->credit, q->quantum);
@@ -1235,14 +1319,7 @@ static int fq_enqueue(struct fq_sched_data *q, struct sk_buff *skb, struct Qdisc
   // * fq_classify identifies the flow itself
   // * flow_queue_add identifies which flow the packet belongs to
 
-  
   flow_queue_add(f, skb);
-  
-  pFlowid[0] =111;
-  pFlowid[1] = 444;
-  pFlowid[2] = 333;
-  
-  
 
   printf("\n* BEFORE: coflow logic\n");
 

@@ -481,8 +481,7 @@ void enqueue_dequeue(char *fileName, struct Qdisc *sch, struct fq_sched_data *q,
   // json_object_to_file("test-creation.json", flow_map);
 
   // Read the enqueue/dequeue operations from JSON file
-  FILE *
-      fp;
+  FILE *fp;
   char buffer[4096 * 100];
 
   fp = fopen(fileName, "r");
@@ -695,3 +694,79 @@ void printDequeuedInfoList(struct dequeued_pkt_info *listHead)
 
   printf("*******************************\n\n");
 }
+
+// ********** COFLOW IDS JSON INPUT **********
+
+// These functions are placed in TestUtilities.h (used in fq_init())
+/*
+int get_num_coflow_ids(char *fileName)
+{
+  // Read the coflow ids from JSON
+  FILE *fp;
+  char buffer[4096 * 100];
+
+  fp = fopen(fileName, "r");
+  fread(buffer, 4096 * 100, 1, fp);
+  fclose(fp);
+
+  struct json_object *parsed_json;
+
+  struct json_object *coflow_id_objects_array;
+
+  parsed_json = json_tokener_parse(buffer);
+
+  // This could fail if buffer is not large enough (failed on 1024)
+  json_object_object_get_ex(parsed_json, "coflow_ids", &coflow_id_objects_array);
+
+  size_t num_coflow_ids = json_object_array_length(coflow_id_objects_array);
+
+  return (int)num_coflow_ids;
+}
+
+// TODO: move over to other location
+u32 *get_coflow_ids(char *fileName)
+{
+
+  // Read the coflow ids from JSON
+  FILE *fp;
+  char buffer[4096 * 100];
+
+  fp = fopen(fileName, "r");
+  fread(buffer, 4096 * 100, 1, fp);
+  fclose(fp);
+
+  struct json_object *parsed_json;
+
+  struct json_object *coflow_id_objects_array;
+
+  struct json_object *coflow_id_object;
+
+  struct json_object *coflow_id;
+
+  u32 coflow_id_int;
+
+  parsed_json = json_tokener_parse(buffer);
+
+  // This could fail if buffer is not large enough (failed on 1024)
+  json_object_object_get_ex(parsed_json, "coflow_ids", &coflow_id_objects_array);
+
+  size_t num_coflow_ids = json_object_array_length(coflow_id_objects_array);
+  // printf("*** Number of coflow ids: %lu ***\n\n", num_coflow_ids);
+
+  // Initialize coflow ids array (pFlowid array in TestUtilities.h)
+  u32 *coflow_ids_array = (u32 *)malloc(num_coflow_ids * sizeof(u32));
+
+  for (size_t i = 0; i < num_coflow_ids; i++)
+  {
+    coflow_id_object = json_object_array_get_idx(coflow_id_objects_array, i);
+
+    json_object_object_get_ex(coflow_id_object, "id", &coflow_id);
+
+    coflow_id_int = json_object_get_int(coflow_id);
+
+    coflow_ids_array[i] = coflow_id_int;
+  }
+
+  return coflow_ids_array;
+}
+*/
