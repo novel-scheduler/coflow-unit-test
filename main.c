@@ -543,18 +543,38 @@ void Test_json_sample()
   }
 }
 
-void Test_enqueue_dequeue_using_json(char *jsonFileName, struct Qdisc *sch, struct fq_sched_data *q)
+void Test_enqueue_dequeue_using_json(char *enq_dq_input_file_name, struct Qdisc *sch, struct fq_sched_data *q)
 {
   struct dequeued_pkt_info *dequeued_pkts_LL_head = NULL;
   struct dequeued_pkt_info *dequeued_pkts_LL_tail = NULL;
 
-  enqueue_dequeue(jsonFileName, sch, q, &dequeued_pkts_LL_head, &dequeued_pkts_LL_tail);
+  enqueue_dequeue(enq_dq_input_file_name, sch, q, &dequeued_pkts_LL_head, &dequeued_pkts_LL_tail);
 
   printDequeuedInfoList(dequeued_pkts_LL_head);
 
   printFlowsList("NEW", q->new_flows.first);
   printFlowsList("OLD", q->old_flows.first);
   printFlowsList("CO", q->co_flows.first);
+}
+
+void coflow_ids_test(char *coflow_ids_input_file_name)
+{
+  u32 *coflow_ids_array = get_coflow_ids(coflow_ids_input_file_name);
+
+  int coflow_ids_array_length = get_num_coflow_ids(coflow_ids_input_file_name);
+  // printf("coflow_ids_array_length => %d\n", coflow_ids_array_length);
+
+  for (size_t i = 0; i < coflow_ids_array_length; i++)
+  {
+    printf("COFLOW ID: %d\n", coflow_ids_array[i]);
+  }
+
+  // int lengthOfarray;
+  // for (int i = 0; i < (sizeof(coflow_ids_array) / sizeof(coflow_ids_array[0])); i++)
+  // {
+  //   lengthOfarray++;
+  // }
+  // printf("lengthOfarray => %d\n", lengthOfarray);
 }
 
 /**
@@ -578,6 +598,10 @@ int main()
 
   // before("Test2_fq_dequeue");
   // Test2_fq_dequeue(sch, q);
+  // after();
+
+  // before("coflow ids test");
+  // coflow_ids_test("./Util/coflow_ids.json");
   // after();
 
   before("Test_enqueue_dequeue_using_json");
