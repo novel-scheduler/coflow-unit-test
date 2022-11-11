@@ -131,7 +131,7 @@ struct qdisc_watchdog
 {
 };
 
-#define nFlows 4
+#define coFlows 3
 
 #define barrierNumber 10000
 
@@ -145,23 +145,19 @@ int pCount_deq = 0;
 
 int pCount = 0;
 
-int barriercounter_flow[2] = {0};
+int barriercounter_flow[coFlows] = {0};
 
 int dcounter = 0;
 
-u32 pFlowid[2] = {-1, -1};
+u32 pFlowid[coFlows] = {-1};
+
+
 // u32 pFlowid[2] = {5, 1111}; // * changed by Heon
 // u32 pFlowid[2] = {111, 333}; // * changed by Heon
 
 int firstflag = 0;
 
 int barrier[barrierNumber] = {0};
-
-struct fq_flow *flowmapper[2];
-
-char *bitmap[nFlows];
-
-unsigned long pCoflow[nFlows];
 
 unsigned long time_first, time_nw, time_elapsed;
 
@@ -626,33 +622,6 @@ static struct fq_flow *fq_classify(struct sk_buff *skb, struct fq_sched_data *q)
         f->socket_hash = sk->sk_hash;
         // printk("flow hash in rb tree value of each flow is  : %u \n
         // ",f->socket_hash );
-        if ((pFlowid[0] == -1) && (pFlowid[1] == -1))
-        {
-          pFlowid[0] = f->socket_hash;
-
-          printf("flow pflowid 1 hash in rb tree value of each flow : %u\n ", pFlowid[1]);
-
-          if (pFlowid[0] == 0)
-          {
-            resetFlowid(pFlowid, lengthOfarray);
-          }
-        }
-
-        if ((pFlowid[0] != -1) && (pFlowid[1] == -1))
-        {
-          int lVal =
-              valuePresentInArray(f->socket_hash, pFlowid, lengthOfarray);
-
-          if (pFlowid[0] != f->socket_hash)
-            pFlowid[1] = f->socket_hash;
-
-          printf("flow pflowid 1 hash in rb tree value of each flow : %u\n ", pFlowid[1]);
-
-          if ((pFlowid[1] == 0))
-          {
-            resetFlowid(pFlowid, lengthOfarray);
-          }
-        }
 
         // if (q->rate_enable)
         //   smp_store_release(&sk->sk_pacing_status, SK_PACING_FQ);
@@ -881,17 +850,18 @@ static struct sk_buff *fq_dequeue(struct Qdisc *sch, struct fq_sched_data *q)
   u64 now = 100; // * manual value of 100
   int lengthOfarray = 0;
   int i;
-  int prevarray[2];
-  int flag[2] = {0, 0};
 
+  
   for (i = 0; i < (sizeof(pFlowid) / sizeof(pFlowid[0])); i++)
   {
     lengthOfarray++;
   }
+  
+  int flag[lengthOfarray];
 
   for (i = 0; i < lengthOfarray; i++)
   {
-    prevarray[i] = -1;
+    flag[i] = 0;
   }
 
   if (!sch->q.qlen)
@@ -953,6 +923,8 @@ begin:
       flag[rValue] = 1;
     }
   }
+  
+  int barriervalue = ipow(2, lengthOfarray) -1;
 
   // printk("rValue is   : %d \n ", rValue);
 
@@ -960,7 +932,7 @@ begin:
 
   // Breach and membership of the flow is checked once it is satisfied all the
   // flows are added to co-flow set at once
-  if ((rValue != -1) && (barrier[dcounter] == 3))
+  if ((rValue != -1) && (barrier[dcounter] == barriervalue))
   {
     printf("*** Coflow BREACH! -> promoting coflows\n");
     barrier[dcounter] = 0;
@@ -1134,6 +1106,23 @@ out:
   return skb;
 }
 
+
+int ipow(int base, int exp)
+{
+    int result = 1;
+    for (;;)
+    {
+        if (exp & 1)
+            result *= base;
+        exp >>= 1;
+        if (!exp)
+            break;
+        base *= base;
+    }
+
+    return result;
+}
+
 // * need a dummy skb & sch
 static int fq_enqueue(struct fq_sched_data *q, struct sk_buff *skb, struct Qdisc *sch, struct sk_buff **to_free)
 {
@@ -1201,7 +1190,7 @@ static int fq_enqueue(struct fq_sched_data *q, struct sk_buff *skb, struct Qdisc
   {
     fq_flow_add_tail(&q->new_flows, f);
 
-    int lengthOfarray = 0;
+/*    int lengthOfarray = 0;
 
     int i;
 
@@ -1228,6 +1217,7 @@ static int fq_enqueue(struct fq_sched_data *q, struct sk_buff *skb, struct Qdisc
           "flow pflowid 1 hash in rb tree value of each flow is  : %u \n ",
           pFlowid[1]);
     }
+    */
 
     if (time_after(100, f->age + q->flow_refill_delay))
       f->credit = max_t(u32, f->credit, q->quantum);
@@ -1245,10 +1235,14 @@ static int fq_enqueue(struct fq_sched_data *q, struct sk_buff *skb, struct Qdisc
   // * fq_classify identifies the flow itself
   // * flow_queue_add identifies which flow the packet belongs to
 
-  pFlowid[0] = 111;
-  pFlowid[1] = 444;
-
+  
   flow_queue_add(f, skb);
+  
+  pFlowid[0] =111;
+  pFlowid[1] = 444;
+  pFlowid[2] = 333;
+  
+  
 
   printf("\n* BEFORE: coflow logic\n");
 
