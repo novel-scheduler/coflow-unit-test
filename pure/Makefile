@@ -1,4 +1,4 @@
-TARGET = sch_fq
+TARGET = kernel_space
 
 EXTRA_CFLAGS += $(FLAGS)
 
